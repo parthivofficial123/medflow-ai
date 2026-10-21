@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · MedFlow AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <a class="brand" href="{{ url_for('index') }}">
+        <svg class="brand__mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="7"/><path d="M12 6.5v11M6.5 12h11"/></svg>
+        <span>MedFlow <span class="brand__ai">AI</span></span>
+      </a>
+      <nav aria-label="Main">
+        <ul class="nav">
+          <li><a class="nav__link" href="{{ url_for('appointments.index') }}"{% if request.blueprint == 'appointments' %} aria-current="page"{% endif %}>Appointments</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="container main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flashes" role="status">
+          {% for category, message in messages %}
+            <p class="alert alert--{{ category }}">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="container footer">
+    <p>Demo app with fictional data only. Not medical, billing, or insurance advice.</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field %}
+{% block title %}Appointments{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">Appointments</h1>
+    <p class="muted">
+      {{ appointments|length }} {{ "appointment" if appointments|length == 1 else "appointments" }} tracked.
+      Changes here don't change your booking with the clinic.
+    </p>
+  </div>
+  <a class="btn btn--primary page-header__jump" href="#add">Add appointment</a>
+</div>
+
+<div class="split">
+  <section aria-labelledby="list-heading">
+    <h2 id="list-heading" class="visually-hidden">All appointments</h2>
+    {% if appointments %}
+      <ul class="appt-list">
+        {% for a in appointments %}
+          {% set d = a.date|to_date %}
+          <li class="card appt">
+            <div class="appt__date" aria-hidden="true">
+              <span class="appt__month">{{ d.strftime("%b") }}</span>
+              <span class="appt__day">{{ d.day }}</span>
+            </div>
+            <div class="appt__body">
+              <div class="appt__top">
+                <h3 class="appt__title">{{ a.reason }}</h3>
+                <span class="pill pill--{{ a.status }}">{{ a.status|capitalize }}</span>
+              </div>
+              <p class="appt__meta">
+                <time datetime="{{ a.date }}T{{ a.time }}">{{ a.date|fmt_date }} · {{ a.time|fmt_time }}</time>
+              </p>
+              <p class="appt__meta">{{ a.provider }}{% if a.location %} · {{ a.location }}{% endif %}</p>
+              {% if a.notes %}<p class="appt__notes">{{ a.notes }}</p>{% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="card empty">
+        <h3>No appointments yet</h3>
+        <p class="muted">Add your first appointment with the form.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section id="add" class="card form-card" aria-labelledby="add-heading">
+    <h2 id="add-heading" class="form-card__title">Add appointment</h2>
+
+    {% if errors %}
+      <div class="alert alert--error" role="alert">
+        <p><strong>Please fix {{ "this field" if errors|length == 1 else errors|length ~ " fields" }}:</strong></p>
+        <ul>
+          {% for name, message in errors.items() %}
+            <li><a href="#f-{{ name }}">{{ message }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('appointments.create') }}" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field-row">
+        {{ field("date", "Date", form, errors, type="date", required=true) }}
+        {{ field("time", "Time", form, errors, type="time", required=true) }}
+      </div>
+      {{ field("reason", "Reason for visit", form, errors, required=true, maxlength=120, placeholder="e.g. Annual physical") }}
+      {{ field("provider", "Provider", form, errors, required=true, maxlength=100, placeholder="e.g. Dr. Lee (fictional)") }}
+      {{ field("location", "Location", form, errors, maxlength=120, placeholder="Clinic or address") }}
+      {{ field("notes", "Notes", form, errors, maxlength=1000, textarea=true, hint="Prep instructions, questions to ask, what to bring.") }}
+      <button class="btn btn--primary btn--block" type="submit">Save appointment</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

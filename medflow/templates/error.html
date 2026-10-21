@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ error.name }}{% endblock %}
+
+{% block content %}
+<div class="card empty error-page">
+  <p class="error-page__code">{{ error.code }}</p>
+  <h1>{{ error.name }}</h1>
+  <p class="muted">{{ error.description }}</p>
+  <a class="btn btn--primary" href="{{ url_for('index') }}">Back to MedFlow</a>
+</div>
+{% endblock %}

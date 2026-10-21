@@ -1,0 +1,26 @@
+{# One labelled form field with hint, error message, and the submitted value preserved. #}
+{% macro field(name, label, form, errors, type="text", required=false, maxlength=none, placeholder=none, hint=none, textarea=false) %}
+  {% set error = errors.get(name) %}
+  {% set described = [] %}
+  {% if hint %}{% set _ = described.append("f-" ~ name ~ "-hint") %}{% endif %}
+  {% if error %}{% set _ = described.append("f-" ~ name ~ "-error") %}{% endif %}
+  <div class="field{% if error %} field--error{% endif %}">
+    <label class="field__label" for="f-{{ name }}">
+      {{ label }}{% if not required %} <span class="field__optional">optional</span>{% endif %}
+    </label>
+    {% if hint %}<p class="field__hint" id="f-{{ name }}-hint">{{ hint }}</p>{% endif %}
+    {% if textarea %}
+      <textarea class="input input--textarea" id="f-{{ name }}" name="{{ name }}" rows="3"
+    {%- else %}
+      <input class="input" id="f-{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ form.get(name, '') }}"
+    {%- endif %}
+        {%- if required %} required{% endif %}
+        {%- if maxlength %} maxlength="{{ maxlength }}"{% endif %}
+        {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+        {%- if error %} aria-invalid="true"{% endif %}
+        {%- if described %} aria-describedby="{{ described|join(' ') }}"{% endif %}
+        {%- if error and (errors|list|first) == name %} autofocus{% endif %}>
+    {%- if textarea %}{{ form.get(name, '') }}</textarea>{% endif %}
+    {% if error %}<p class="field__error" id="f-{{ name }}-error">{{ error }}</p>{% endif %}
+  </div>
+{% endmacro %}
