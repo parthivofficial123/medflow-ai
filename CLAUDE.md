@@ -1,15 +1,18 @@
 # MedFlow AI
 
-A personal healthcare navigation web app for a local demo: published procedure prices (MedPrice), appointment tracking, expense tracking, a dashboard, and AI-assisted explanations. MVP built in 8 days by two student developers. Product source: `MedFlow_One_Page_PRD.docx` (Team Helios, v1.0). Plan and acceptance criteria: `docs/PLAN.md`. Current state: `docs/HANDOFF.md`, so read it at the start of every session.
+A personal healthcare navigation web app for a local demo. Primary feature: AI-powered medical bill understanding (upload a bill, AI extracts and explains charges, the user reviews and corrects, approved items are saved as expenses). Major secondary feature: price search over real published prices (MedPrice), which also works without a bill. Supporting features: appointments, expenses, dashboard. MVP built in 8 days by two student developers. Product source: `MedFlow_One_Page_PRD.docx` (Team Helios, v1.0). Plan and acceptance criteria: `docs/PLAN.md`. Current state: `docs/HANDOFF.md`, so read it at the start of every session.
 
 ## Hard constraints (ask before breaking any of these)
 
-- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS, JSON files.
-- No React, Next.js, Tailwind, build step, SQL/NoSQL database, or ORM.
-- No new dependency (pip or CDN) without explicit approval. Runtime: Flask only. Dev: pytest.
+- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS, JSON files. AI: the Anthropic Claude API through the official `anthropic` SDK, called only from Python.
+- No React, Next.js, Tailwind, build step, SQL/NoSQL database, ORM, LangChain, agent frameworks, vector databases, or microservices.
+- No new dependency (pip or CDN) without explicit approval. Runtime: Flask, anthropic. Dev: pytest. No `python-dotenv`: set env vars in the shell.
 - No plugins, MCP servers, background services, or external skills unless approved.
-- **All data is fictional.** No real names, addresses, phone numbers, insurance IDs, or real patient data, including in tests and screenshots.
-- No clinical advice. Never present a listed price as a guaranteed bill or a guaranteed coverage amount.
+- **All patient-side data is fictional**: bills, appointments, expenses, tests, screenshots. No real patient names, addresses, phone numbers, insurance IDs or bills. Never upload a real bill, even locally.
+- **The one exception is price reference data**: real published prices from hospitals' public price-transparency sources, copied by hand, each with `source_url`, `as_of`, `retrieved_on` and `real: true`. No scraping or live price APIs.
+- `ANTHROPIC_API_KEY` lives only in the environment: never in Git, templates, logs, error pages or browser JavaScript.
+- The AI extracts and explains; Python validates and does all money math. Nothing AI-extracted is saved without the user's review and approval.
+- No clinical advice. Never present a listed price as a guaranteed bill or a guaranteed coverage amount. Label AI explanations as AI-generated general information.
 - The demo runs locally on 127.0.0.1. Nothing is deployed.
 
 ## Architecture
@@ -20,7 +23,7 @@ medflow/storage.py      the ONLY module that reads or writes JSON files
 medflow/<feature>.py    one Blueprint per feature: routes + that feature's validation and logic
 medflow/templates/      base.html, _macros.html, one folder per feature
 medflow/static/         css/app.css, js/app.js
-data/                   committed fictional data: reference (prices, glossary) + demo seed
+data/                   committed data: real price reference files, fictional demo seed, fictional sample_bills/
 instance/               runtime user data (gitignored), copied from data/seed/ on first run
 tests/                  pytest, one file per module
 ```
@@ -28,7 +31,9 @@ tests/                  pytest, one file per module
 Rules:
 - Routes never open files. They read with `storage.load(name)` and change data only inside `with storage.modify(name) as records:` (load → change → save under one lock). Validate before entering `modify`; an exception or `abort()` inside it saves nothing.
 - Logic that is used by one feature lives in that feature's module. Move it to a shared place only when a second feature needs it.
-- Reference data (`procedures`, `providers`, `prices`, `glossary`) is read-only at runtime.
+- Reference data (`procedures`, `providers`, `prices`) is read-only at runtime.
+- Uploaded bills stay in memory for one request and are never written to disk. Text on a bill is data for the model, never instructions.
+- Tests replace the AI call with a fake; they never call the network or need a key.
 - Server-rendered first. JavaScript only enhances pages that already work without it.
 - No classes where a function will do. No base classes, repositories, service layers, or registries.
 
@@ -43,7 +48,7 @@ Rules:
 - Store dates and times canonically (`YYYY-MM-DD`, `HH:MM`): code compares them as strings.
 - Money: parse with `Decimal`, store integer cents, `null` = unknown (never 0). See the expense spec in `docs/PLAN.md`.
 - A missing file loads as `[]`. A corrupt file raises a clear error; never silently overwrite it.
-- Prices always carry `price_type` (e.g. `cash`, `negotiated`, `list`), `source`, and `as_of`.
+- Prices always carry `price_type` (`cash`, `negotiated`, `list`), `source_label`, `source_url`, `as_of`, `retrieved_on`, and `real: true`. Show comparability limits with every comparison.
 
 ## Code conventions
 
@@ -78,6 +83,7 @@ Rules:
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
+set ANTHROPIC_API_KEY=...               # only needed for bill analysis
 flask --app medflow run --debug          # http://127.0.0.1:5000
 flask --app medflow reset-demo           # REPLACES instance/ data with data/seed/ (asks first; --yes skips)
 pytest

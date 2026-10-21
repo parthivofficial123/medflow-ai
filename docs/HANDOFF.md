@@ -1,9 +1,15 @@
 # Handoff
 
-_Last updated: 2026-10-20. **Day 3 (expenses) complete. Waiting for approval before Day 4.**_
+_Last updated: 2026-10-21. **Day 3 complete. Plan revised and approved (2026-10-21); Day 4 is now bill analysis.**_
 
 ## Goal
-Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: Day 4 (MedPrice, P1–P5), only after approval.
+Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: Day 4 (bill analysis, part 1, B1–B3).
+
+## Plan revision (2026-10-21)
+- AI bill understanding is now the primary feature (Days 4–5), using the Anthropic `anthropic` SDK. No `python-dotenv`; set `ANTHROPIC_API_KEY` in the shell.
+- MedPrice moves to Day 6 and uses a small hand-curated set of **real** published prices (`source_url`, `as_of`, `retrieved_on`, `real: true`). Patient-side data stays fictional.
+- Glossary and "Report an issue" dropped. Dashboard folds into Day 7.
+- Project structure unchanged. See `docs/PLAN.md` "Approved decisions" 6–7 and the bill analysis spec.
 
 ## Current state
 - Days 1–3 and the audit fixes are committed locally. Nothing is pushed.
@@ -42,9 +48,10 @@ Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: Day 4 (MedPr
 - Locking `load`/`save` separately doesn't stop lost updates; use `storage.modify`.
 - A server started without `--debug` caches templates; restart it after template edits when checking in a browser.
 
-## Next steps: Day 4 (after approval)
-Follow "Price comparison specification (Day 4)" in `docs/PLAN.md`:
-1. `data/procedures.json`, `providers.json`, `prices.json` (fictional, `sample: true`, stable slug IDs).
-2. `medflow/prices.py`: alias search; grouping by price type and included services; ranking only within comparable groups; stale flag; sample banner and disclaimer.
-3. Save a comparison to `saved.json` (IDs only) via `storage.modify`; "No longer available" for missing references.
-4. Nav link; tests first; checks at 375px and 1280px; `/security-review` checkpoint; commit.
+## Next steps: Day 4
+Follow "Bill analysis specification (Days 4–5)" in `docs/PLAN.md`:
+1. Add `anthropic` to `requirements.txt` and install it.
+2. Write 2–3 fictional sample bills in `data/sample_bills/`.
+3. Tests first (`tests/test_bills.py`, AI faked): upload checks, response shape checks, per-item `parse_money`, flagged items, error cases.
+4. `medflow/bills.py` + `templates/bills/`: upload form, AI call, read-only review page; nav link.
+5. Browser check at 375px and 1280px (with a real key, sample bills only); `pytest`; `/code-review`; commit.
