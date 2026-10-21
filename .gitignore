@@ -1,0 +1,25 @@
+# Runtime user data: created from data/seed/ on first run, never committed
+instance/
+
+# Secrets and local config
+.env
+.env.*
+*.pem
+*.key
+
+# Python / tooling
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary and OS/editor files
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
