@@ -1,0 +1,93 @@
+[
+  {
+    "id": 1,
+    "date": "2026-09-12",
+    "provider": "Maple Grove Pharmacy (fictional)",
+    "description": "Flu shot",
+    "category": "pharmacy",
+    "estimated_cents": 2500,
+    "actual_cents": 0,
+    "paid_cents": 0,
+    "appointment_id": 5,
+    "appointment_label": "Flu shot · Sep 12, 2026",
+    "created_at": "2026-09-12T17:00:00"
+  },
+  {
+    "id": 2,
+    "date": "2026-09-28",
+    "provider": "Bayside Dental (fictional)",
+    "description": "Late cancellation fee",
+    "category": "dental",
+    "estimated_cents": null,
+    "actual_cents": 2500,
+    "paid_cents": 0,
+    "appointment_id": 6,
+    "appointment_label": "Dental cleaning · Sep 28, 2026",
+    "created_at": "2026-09-29T09:00:00"
+  },
+  {
+    "id": 3,
+    "date": "2026-10-02",
+    "provider": "Northgate Urgent Care (fictional)",
+    "description": "Urgent care visit for sprained ankle",
+    "category": "visit",
+    "estimated_cents": 15000,
+    "actual_cents": 9800,
+    "paid_cents": 0,
+    "appointment_id": null,
+    "appointment_label": null,
+    "created_at": "2026-10-02T19:30:00"
+  },
+  {
+    "id": 4,
+    "date": "2026-10-08",
+    "provider": "Maple Grove Pharmacy (fictional)",
+    "description": "Prescription refill",
+    "category": "pharmacy",
+    "estimated_cents": null,
+    "actual_cents": 1899,
+    "paid_cents": 1899,
+    "appointment_id": null,
+    "appointment_label": null,
+    "created_at": "2026-10-08T12:15:00"
+  },
+  {
+    "id": 5,
+    "date": "2026-10-14",
+    "provider": "Harborview Physical Therapy (fictional)",
+    "description": "Physical therapy session",
+    "category": "therapy",
+    "estimated_cents": 12000,
+    "actual_cents": 13550,
+    "paid_cents": 5000,
+    "appointment_id": null,
+    "appointment_label": null,
+    "created_at": "2026-10-14T16:45:00"
+  },
+  {
+    "id": 6,
+    "date": "2026-10-23",
+    "provider": "Dr. Imani Sol (fictional)",
+    "description": "Annual physical copay",
+    "category": "visit",
+    "estimated_cents": 4000,
+    "actual_cents": null,
+    "paid_cents": 0,
+    "appointment_id": 1,
+    "appointment_label": "Annual physical · Oct 23, 2026",
+    "created_at": "2026-10-05T10:00:00"
+  },
+  {
+    "id": 7,
+    "date": "2026-11-04",
+    "provider": "Lakeside Imaging Center (fictional)",
+    "description": "Knee MRI",
+    "category": "imaging",
+    "estimated_cents": 45000,
+    "actual_cents": null,
+    "paid_cents": 10000,
+    "appointment_id": 2,
+    "appointment_label": "Knee MRI · Nov 4, 2026",
+    "created_at": "2026-10-06T11:20:00"
+  }
+]

@@ -10,6 +10,12 @@
     {% if tasks %}Its {{ tasks|length }} follow-up {{ "task" if tasks|length == 1 else "tasks" }} will be deleted too. {% endif %}
     This can't be undone.
   </p>
+  {% if linked_count %}
+    <p class="muted">
+      {{ linked_count }} linked {{ "expense stays" if linked_count == 1 else "expenses stay" }} in Expenses,
+      marked "Linked appointment was deleted".
+    </p>
+  {% endif %}
   <form class="actions" method="post" action="{{ url_for('appointments.delete', appt_id=a.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn--danger" type="submit">Delete appointment</button>

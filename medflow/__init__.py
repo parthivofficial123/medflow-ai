@@ -44,6 +44,7 @@ def create_app(test_config=None):
     app.add_template_filter(to_date)
     app.add_template_filter(fmt_date)
     app.add_template_filter(fmt_time)
+    app.add_template_filter(money)
 
     @app.errorhandler(400)
     @app.errorhandler(404)
@@ -65,8 +66,9 @@ def create_app(test_config=None):
             message = "Something went wrong on our side. Try again; if it keeps happening, check the terminal running MedFlow."
         return render_template("error.html", error=InternalServerError(description=message)), 500
 
-    from . import appointments
+    from . import appointments, expenses
     app.register_blueprint(appointments.bp)
+    app.register_blueprint(expenses.bp)
 
     @app.get("/")
     def index():
@@ -98,6 +100,15 @@ def to_date(value):
 def fmt_date(value):
     d = to_date(value)
     return f"{d:%a, %b} {d.day}, {d.year}"
+
+
+def money(cents, signed=False):
+    """Integer cents -> "$1,234.56"; None -> an em dash. Integer math only, no floats."""
+    if cents is None:
+        return "—"
+    sign = "-" if cents < 0 else ("+" if signed and cents > 0 else "")
+    dollars, rest = divmod(abs(cents), 100)
+    return f"{sign}${dollars:,}.{rest:02d}"
 
 
 def fmt_time(value):

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Delete expense{% endblock %}
+
+{% block content %}
+<section class="card panel confirm" aria-labelledby="confirm-heading">
+  <h1 id="confirm-heading" class="detail__title">Delete this expense?</h1>
+  <p>
+    <strong>{{ e.description or categories[e.category] }}</strong> from {{ e.provider }}, {{ e.date|fmt_date }}.
+    Estimated {{ e.estimated_cents|money }}, billed {% if e.actual_cents is none %}not yet{% else %}{{ e.actual_cents|money }}{% endif %}, paid {{ e.paid_cents|money }}.
+  </p>
+  <p class="muted">This can't be undone.</p>
+  <form class="actions" method="post" action="{{ url_for('expenses.delete', expense_id=e.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn--danger" type="submit">Delete expense</button>
+    <a class="btn btn--secondary" href="{{ url_for('expenses.index') }}#expense-{{ e.id }}">Keep it</a>
+  </form>
+</section>
+{% endblock %}

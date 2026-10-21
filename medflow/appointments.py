@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
-from . import storage
+from . import dates, expenses, storage
 
 bp = Blueprint("appointments", __name__, url_prefix="/appointments")
 
@@ -28,14 +28,9 @@ REMINDER_CHOICES = {
 TASK_MAX = 200
 
 
-def today():
-    # A function rather than date.today() inline so tests can pin the date.
-    return date.today()
-
-
 @bp.context_processor
 def inject_choices():
-    return {"statuses": STATUSES, "reminder_choices": REMINDER_CHOICES, "today": today()}
+    return {"statuses": STATUSES, "reminder_choices": REMINDER_CHOICES, "today": dates.today()}
 
 
 def validate(form):
@@ -53,14 +48,9 @@ def validate(form):
             errors[name] = f"{label} must be {max_len} characters or fewer."
 
     if "date" not in errors:
-        try:
-            parsed = datetime.strptime(data["date"], "%Y-%m-%d")
-            if not 2000 <= parsed.year <= 2100:
-                errors["date"] = "Enter a date between 2000 and 2100."
-            else:
-                data["date"] = parsed.strftime("%Y-%m-%d")
-        except ValueError:
-            errors["date"] = "Enter a valid date (YYYY-MM-DD)."
+        data["date"], error = dates.check_date(data["date"])
+        if error:
+            errors["date"] = error
     if "time" not in errors:
         try:
             data["time"] = datetime.strptime(data["time"], "%H:%M").strftime("%H:%M")
@@ -105,7 +95,7 @@ def now_iso():
 
 def render_list(form=None, errors=None, status=200):
     records = storage.load("appointments")
-    on, cutoff = today(), today().isoformat()
+    on, cutoff = dates.today(), dates.today().isoformat()
     by_time = lambda a: (a["date"], a["time"])
     upcoming = sorted((a for a in records if a["date"] >= cutoff), key=by_time)
     past = sorted((a for a in records if a["date"] < cutoff), key=by_time, reverse=True)
@@ -128,8 +118,9 @@ def render_detail(appt, task_text="", task_error=None, status=200):
         "appointments/detail.html",
         a=appt,
         tasks=appt.get("tasks", []),
+        linked_expenses=expenses.linked_to(appt["id"]),
         remind_on=remind_on,
-        is_due=reminder_due(appt, today()),
+        is_due=reminder_due(appt, dates.today()),
         task_text=task_text,
         task_errors={"text": task_error} if task_error else {},
     ), status
@@ -194,11 +185,18 @@ def update(appt_id):
 @bp.get("/<int:appt_id>/delete")
 def confirm_delete(appt_id):
     appt = find(storage.load("appointments"), appt_id)
-    return render_template("appointments/confirm_delete.html", a=appt)
+    return render_template(
+        "appointments/confirm_delete.html", a=appt, linked_count=len(expenses.linked_to(appt_id))
+    )
 
 
 @bp.post("/<int:appt_id>/delete")
 def delete(appt_id):
+    find(storage.load("appointments"), appt_id)  # 404 before touching expenses
+    # Two files, two writes (see "Feature integration rules" in docs/PLAN.md). Unlinking
+    # expenses first means a failure in between leaves harmless unlinked expenses,
+    # never expenses pointing at a deleted appointment.
+    expenses.unlink_appointment(appt_id)
     with storage.modify("appointments") as records:
         appt = find(records, appt_id)
         records.remove(appt)

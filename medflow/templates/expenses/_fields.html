@@ -1,0 +1,25 @@
+{# Shared by the add form (list.html) and edit.html. Expects form, errors, categories, appointment_choices. #}
+{% from "_macros.html" import field, select_field, error_summary %}
+{{ error_summary(errors) }}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="field-row">
+  {{ field("date", "Date of service", form, errors, type="date", required=true) }}
+  {{ select_field("category", "Category", category_choices, form, errors, required=true) }}
+</div>
+{{ field("provider", "Provider", form, errors, required=true, maxlength=100, placeholder="e.g. Lakeside Imaging (fictional)") }}
+{{ field("description", "Description", form, errors, maxlength=200, placeholder="e.g. Knee MRI") }}
+
+<fieldset class="fieldset">
+  <legend class="field__label">Amounts in US dollars</legend>
+  <p class="field__hint">
+    Enter an estimate, a billed amount, or both. Leave <strong>Billed</strong> blank until you get the bill;
+    enter 0 only if the bill says nothing is due.
+  </p>
+  <div class="field-row">
+    {{ field("estimated", "Estimated", form, errors, inputmode="decimal", placeholder="0.00") }}
+    {{ field("actual", "Billed", form, errors, inputmode="decimal", placeholder="0.00") }}
+  </div>
+  {{ field("paid", "Paid so far", form, errors, inputmode="decimal", placeholder="0.00") }}
+</fieldset>
+
+{{ select_field("appointment_id", "Linked appointment", appointment_choices, form, errors) }}

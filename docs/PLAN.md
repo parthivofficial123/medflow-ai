@@ -54,11 +54,11 @@ Every route that changes user data uses `storage.modify(name)` (load → change 
 | Estimated | Σ `estimated_cents` where set | "Estimated" |
 | Billed | Σ `actual_cents` where not null | "Billed (actual)" |
 | Paid | Σ `paid_cents` | "Paid" |
-| Unpaid billed | Σ max(`actual_cents` − `paid_cents`, 0) where actual is known | "You owe (billed, unpaid)" |
+| Unpaid recorded bills | Σ max(`actual_cents` − `paid_cents`, 0) where actual is known | "Unpaid recorded bills" (not "You owe": the app can't verify patient responsibility) |
 | Pending estimates | Σ `estimated_cents` where actual is null | "Expected, not billed yet" |
 | Estimate accuracy | Σ (`actual` − `estimated`) over records that have **both** | "Billed vs. estimate" |
 
-Estimates never appear in "You owe". Totals are shown per category and for the current month (by service date).
+Estimates never appear in "Unpaid recorded bills". When no expense in a group has a known bill, Billed shows "—", not $0.00. Totals are shown per category and for the current month (by service date).
 
 ## Price comparison specification (Day 4)
 
@@ -127,7 +127,7 @@ Daily rhythm: plan → failing test → implement → browser check → `pytest`
 - **E1** CRUD works with validation: valid date, a category from the fixed list, money rules from the spec (Decimal parsing; negatives, >2 decimals, NaN and over-limit rejected; paid ≤ actual). Input is kept on error.
 - **E2** Amounts are stored as integer cents and displayed as `$1,234.56`. Tests include `0.29` → 29 and `19.99` → 1999 (the float pitfalls).
 - **E3** A blank actual amount is saved as `null` and shown as "Not billed yet"; an actual of `0` is shown as `$0.00` / "Paid". Tests cover both.
-- **E4** The summary shows Estimated, Billed, Paid, "You owe (billed, unpaid)" and "Expected, not billed yet" as separate numbers, per category and for the current month. Tests check each definition against hand-computed totals, including that estimates never count toward "You owe".
+- **E4** The summary shows Estimated, Billed, Paid, "Unpaid recorded bills" and "Expected, not billed yet" as separate numbers, per category and for the current month. Tests check each definition against hand-computed totals, including that estimates never count toward unpaid bills.
 - **E5** An expense can link to an appointment, and the appointment page lists its linked expenses. Deleting the appointment keeps the expenses, unlinked, with their label and a "Linked appointment was deleted" note.
 
 ### MedPrice

@@ -1,18 +1,10 @@
 import json
-import threading
 from datetime import date
 
 import pytest
 
 from medflow import appointments, create_app
-from tests.conftest import get_csrf_token
-
-TODAY = date(2026, 10, 20)
-
-
-@pytest.fixture(autouse=True)
-def pin_today(monkeypatch):
-    monkeypatch.setattr(appointments, "today", lambda: TODAY)
+from tests.conftest import TODAY, get_csrf_token, run_concurrently
 
 VALID = {
     "date": "2026-11-20",
@@ -428,25 +420,6 @@ def test_reset_demo_warns_and_does_nothing_unless_confirmed(app, data_dir):
 
 
 # Audit fix: concurrent requests
-def run_concurrently(app, jobs):
-    """Run each job(client) on its own thread, all starting together; return status codes."""
-    barrier = threading.Barrier(len(jobs))
-    statuses = []
-
-    def worker(job):
-        client = app.test_client()
-        token = get_csrf_token(client)
-        barrier.wait()
-        statuses.append(job(client, token).status_code)
-
-    threads = [threading.Thread(target=worker, args=(job,)) for job in jobs]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    return statuses
-
-
 def test_20_concurrent_task_adds_all_persist(app, data_dir):
     jobs = [
         lambda c, t, i=i: c.post("/appointments/3/tasks", data={"text": f"Task {i}", "csrf_token": t})
@@ -508,12 +481,6 @@ def test_edit_also_saves_canonical_date(client, data_dir):
 
 
 # Audit fix: friendly error pages
-@pytest.fixture
-def live_app(data_dir):
-    # Without TESTING, Flask uses our 500 handler instead of raising, like a real run.
-    return create_app({"SECRET_KEY": "test-secret", "DATA_DIR": str(data_dir)})
-
-
 def test_corrupt_file_shows_friendly_page_with_reset_advice(live_app, data_dir):
     (data_dir / "appointments.json").write_text("[{broken", encoding="utf-8")
     response = live_app.test_client().get("/appointments/")

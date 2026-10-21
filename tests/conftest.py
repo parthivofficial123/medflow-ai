@@ -1,8 +1,18 @@
 import re
+import threading
+from datetime import date
 
 import pytest
 
-from medflow import create_app
+from medflow import create_app, dates
+
+# Every test runs "on" this date, so upcoming/past, reminders and "this month" are stable.
+TODAY = date(2026, 10, 20)
+
+
+@pytest.fixture(autouse=True)
+def pin_today(monkeypatch):
+    monkeypatch.setattr(dates, "today", lambda: TODAY)
 
 
 @pytest.fixture
@@ -21,6 +31,31 @@ def client(app):
     return app.test_client()
 
 
+@pytest.fixture
+def live_app(data_dir):
+    # Without TESTING, Flask uses our 500 handler instead of raising, like a real run.
+    return create_app({"SECRET_KEY": "test-secret", "DATA_DIR": str(data_dir)})
+
+
 def get_csrf_token(client, path="/appointments/"):
     html = client.get(path).get_data(as_text=True)
     return re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
+
+
+def run_concurrently(app, jobs):
+    """Run each job(client, token) on its own thread, all starting together; return status codes."""
+    barrier = threading.Barrier(len(jobs))
+    statuses = []
+
+    def worker(job):
+        client = app.test_client()
+        token = get_csrf_token(client)
+        barrier.wait()
+        statuses.append(job(client, token).status_code)
+
+    threads = [threading.Thread(target=worker, args=(job,)) for job in jobs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return statuses

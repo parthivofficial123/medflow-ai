@@ -1,5 +1,5 @@
 {# One labelled form field with hint, error message, and the submitted value preserved. #}
-{% macro field(name, label, form, errors, type="text", required=false, maxlength=none, placeholder=none, hint=none, textarea=false) %}
+{% macro field(name, label, form, errors, type="text", required=false, maxlength=none, placeholder=none, hint=none, textarea=false, inputmode=none) %}
   {% set error = errors.get(name) %}
   {% set described = [] %}
   {% if hint %}{% set _ = described.append("f-" ~ name ~ "-hint") %}{% endif %}
@@ -17,6 +17,7 @@
         {%- if required %} required{% endif %}
         {%- if maxlength %} maxlength="{{ maxlength }}"{% endif %}
         {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+        {%- if inputmode %} inputmode="{{ inputmode }}"{% endif %}
         {%- if error %} aria-invalid="true"{% endif %}
         {%- if described %} aria-describedby="{{ described|join(' ') }}"{% endif %}
         {%- if error and (errors|list|first) == name %} autofocus{% endif %}>

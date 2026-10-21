@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Expenses{% endblock %}
+
+{% macro tile(label, cents, note) %}
+  <div class="stat">
+    <dt class="stat__label">{{ label }}</dt>
+    <dd class="stat__value">{{ cents|money }}</dd>
+    <dd class="stat__note">{{ note }}</dd>
+  </div>
+{% endmacro %}
+
+{% block content %}
+{% set m = summary.month %}
+{% set all = summary.all %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">Expenses</h1>
+    <p class="muted">{{ expenses|length }} recorded. Amounts are what you entered, not verified by an insurer.</p>
+  </div>
+  <a class="btn btn--primary page-header__jump" href="#add">Add expense</a>
+</div>
+
+<section class="card panel summary" aria-labelledby="month-heading">
+  <h2 id="month-heading" class="panel__title">{{ summary.month_label }}</h2>
+  <dl class="stats">
+    {{ tile("Estimated", m.estimated, "Expected costs you entered") }}
+    {{ tile("Billed", m.billed if m.billed_count else none, "Actual amounts on bills" if m.billed_count else "No bills recorded yet") }}
+    {{ tile("Paid", m.paid, "Payments you recorded") }}
+    {{ tile("Unpaid recorded bills", m.unpaid_billed, "Billed minus paid. Not verified") }}
+    {{ tile("Expected, not billed yet", m.pending_estimates, "Estimates only, not money owed") }}
+  </dl>
+  <p class="summary__compare">
+    {% if m.compared_count %}
+      Billed vs. estimate for {{ m.compared_count }} {{ "expense" if m.compared_count == 1 else "expenses" }} with both:
+      <strong>{{ m.compared_actual|money }}</strong> billed vs. {{ m.compared_estimated|money }} estimated
+      ({{ (m.compared_actual - m.compared_estimated)|money(signed=true) }}).
+    {% else %}
+      No expenses this month have both an estimate and a bill to compare yet.
+    {% endif %}
+  </p>
+</section>
+
+{% if summary.by_category %}
+  <section class="card panel" aria-labelledby="category-heading">
+    <h2 id="category-heading" class="panel__title">All time by category</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-labelledby="category-heading">
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col">Category</th>
+            <th scope="col">Estimated</th>
+            <th scope="col">Billed</th>
+            <th scope="col">Paid</th>
+            <th scope="col">Unpaid recorded bills</th>
+            <th scope="col">Expected, not billed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key, t in summary.by_category.items() %}
+            <tr>
+              <th scope="row">{{ categories[key] }}</th>
+              <td>{{ t.estimated|money }}</td>
+              <td>{{ (t.billed if t.billed_count else none)|money }}</td>
+              <td>{{ t.paid|money }}</td>
+              <td>{{ t.unpaid_billed|money }}</td>
+              <td>{{ t.pending_estimates|money }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total</th>
+            <td>{{ all.estimated|money }}</td>
+            <td>{{ (all.billed if all.billed_count else none)|money }}</td>
+            <td>{{ all.paid|money }}</td>
+            <td>{{ all.unpaid_billed|money }}</td>
+            <td>{{ all.pending_estimates|money }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+{% endif %}
+
+<div class="split">
+  <section aria-labelledby="list-heading">
+    <h2 id="list-heading" class="section-title">All expenses <span class="count">{{ expenses|length }}</span></h2>
+    {% if expenses %}
+      <ul class="appt-list">
+        {% for e in expenses %}
+          {% set st = expense_status(e) %}
+          <li class="card expense" id="expense-{{ e.id }}">
+            <div class="appt__top">
+              <h3 class="appt__title">{{ e.description or categories[e.category] }}</h3>
+              <span class="pill pill--{{ st }}">{{ status_labels[st] }}</span>
+            </div>
+            <p class="appt__meta">{{ e.date|fmt_date }} · {{ categories[e.category] }} · {{ e.provider }}</p>
+            <dl class="amounts">
+              <div><dt>Estimated</dt><dd>{{ e.estimated_cents|money }}</dd></div>
+              <div><dt>Billed</dt><dd>{% if e.actual_cents is none %}Not billed yet{% else %}{{ e.actual_cents|money }}{% endif %}</dd></div>
+              <div><dt>Paid</dt><dd>{{ e.paid_cents|money }}</dd></div>
+            </dl>
+            {% if e.appointment_id is not none and e.appointment_id in appointment_ids %}
+              <p class="appt__meta">For <a class="expense__link" href="{{ url_for('appointments.detail', appt_id=e.appointment_id) }}">{{ e.appointment_label }}</a></p>
+            {% elif e.appointment_id is not none or e.appointment_label %}
+              <p class="appt__meta">Linked appointment was deleted{% if e.appointment_label %} ({{ e.appointment_label }}){% endif %}</p>
+            {% endif %}
+            <div class="expense__actions">
+              {% if st in ("unpaid", "partly_paid") %}
+                <form method="post" action="{{ url_for('expenses.set_payment', expense_id=e.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn--secondary btn--sm" type="submit" name="action" value="paid">Mark paid</button>
+                </form>
+              {% elif st == "paid" and e.paid_cents %}
+                <form method="post" action="{{ url_for('expenses.set_payment', expense_id=e.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn--secondary btn--sm" type="submit" name="action" value="unpaid">Mark unpaid</button>
+                </form>
+              {% endif %}
+              <a class="btn btn--secondary btn--sm" href="{{ url_for('expenses.edit', expense_id=e.id) }}">Edit<span class="visually-hidden"> {{ e.description or categories[e.category] }}</span></a>
+              <a class="btn btn--danger-outline btn--sm" href="{{ url_for('expenses.confirm_delete', expense_id=e.id) }}">Delete<span class="visually-hidden"> {{ e.description or categories[e.category] }}</span></a>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="card empty">
+        <h3>No expenses yet</h3>
+        <p class="muted">Record a bill or an estimate with the form.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section id="add" class="card form-card" aria-labelledby="add-heading">
+    <h2 id="add-heading" class="form-card__title">Add expense</h2>
+    <form method="post" action="{{ url_for('expenses.create') }}" novalidate>
+      {% include "expenses/_fields.html" %}
+      <button class="btn btn--primary btn--block" type="submit">Save expense</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

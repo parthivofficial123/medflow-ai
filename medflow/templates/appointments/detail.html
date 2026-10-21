@@ -79,6 +79,30 @@
   </div>
 
   <div class="stack">
+    <section class="card panel" aria-labelledby="expenses-heading">
+      <h2 id="expenses-heading" class="panel__title">
+        Expenses
+        {% if linked_expenses %}<span class="count">{{ linked_expenses|length }}</span>{% endif %}
+      </h2>
+      {% if linked_expenses %}
+        <ul class="mini-list">
+          {% for e in linked_expenses %}
+            {% set st = expense_status(e) %}
+            <li>
+              <a href="{{ url_for('expenses.index') }}#expense-{{ e.id }}">{{ e.description or categories[e.category] }}</a>
+              <span class="mini-list__meta">
+                {% if e.actual_cents is not none %}{{ e.actual_cents|money }} billed{% else %}{{ e.estimated_cents|money }} estimated{% endif %}
+                · <span class="pill pill--{{ st }}">{{ status_labels[st] }}</span>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No expenses linked yet.</p>
+      {% endif %}
+      <a class="btn btn--secondary btn--sm mini-list__add" href="{{ url_for('expenses.index', appointment_id=a.id) }}#add">Add expense for this visit</a>
+    </section>
+
     <section class="card panel" aria-labelledby="status-heading">
       <h2 id="status-heading" class="panel__title">Status</h2>
       <form class="segmented" method="post" action="{{ url_for('appointments.set_status', appt_id=a.id) }}">
