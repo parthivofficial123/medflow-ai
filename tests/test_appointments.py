@@ -1,4 +1,5 @@
 import json
+import threading
 from datetime import date
 
 import pytest
@@ -412,7 +413,130 @@ def test_day_one_records_without_new_fields_still_work(client, data_dir):
 # A5: reset-demo
 def test_reset_demo_command_restores_seed(app, data_dir):
     (data_dir / "appointments.json").write_text("[]", encoding="utf-8")
-    result = app.test_cli_runner().invoke(args=["reset-demo"])
+    result = app.test_cli_runner().invoke(args=["reset-demo", "--yes"])
     assert result.exit_code == 0
     assert "Demo data restored" in result.output
     assert len(stored(data_dir)) == 6
+
+
+def test_reset_demo_warns_and_does_nothing_unless_confirmed(app, data_dir):
+    (data_dir / "appointments.json").write_text("[]", encoding="utf-8")
+    result = app.test_cli_runner().invoke(args=["reset-demo"], input="n\n")
+    assert result.exit_code != 0
+    assert "REPLACES all MedFlow data" in result.output
+    assert stored(data_dir) == []
+
+
+# Audit fix: concurrent requests
+def run_concurrently(app, jobs):
+    """Run each job(client) on its own thread, all starting together; return status codes."""
+    barrier = threading.Barrier(len(jobs))
+    statuses = []
+
+    def worker(job):
+        client = app.test_client()
+        token = get_csrf_token(client)
+        barrier.wait()
+        statuses.append(job(client, token).status_code)
+
+    threads = [threading.Thread(target=worker, args=(job,)) for job in jobs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return statuses
+
+
+def test_20_concurrent_task_adds_all_persist(app, data_dir):
+    jobs = [
+        lambda c, t, i=i: c.post("/appointments/3/tasks", data={"text": f"Task {i}", "csrf_token": t})
+        for i in range(20)
+    ]
+    assert run_concurrently(app, jobs) == [302] * 20
+    tasks = appt(data_dir, 3)["tasks"]
+    assert sorted(t["text"] for t in tasks) == sorted(f"Task {i}" for i in range(20))
+    assert len({t["id"] for t in tasks}) == 20
+
+
+def test_concurrent_reads_and_writes_all_succeed(app, data_dir):
+    writes = [
+        lambda c, t, i=i: c.post("/appointments/", data={**VALID, "reason": f"Visit {i}", "csrf_token": t})
+        for i in range(10)
+    ]
+    reads = [lambda c, t: c.get("/appointments/") for _ in range(10)]
+    statuses = run_concurrently(app, writes + reads)
+    assert sorted(statuses) == [200] * 10 + [302] * 10
+    assert len(stored(data_dir)) == 6 + 10
+
+
+# Audit fix: canonical dates and times
+@pytest.mark.parametrize("typed, saved", [
+    ({"date": "2026-1-5"}, {"date": "2026-01-05"}),
+    ({"date": " 2026-11-04 "}, {"date": "2026-11-04"}),
+    ({"time": "9:5"}, {"time": "09:05"}),
+    ({"time": "07:30"}, {"time": "07:30"}),
+])
+def test_nonstandard_dates_and_times_are_saved_in_canonical_form(client, data_dir, typed, saved):
+    assert post(client, {**VALID, **typed}).status_code == 302
+    new = stored(data_dir)[-1]
+    assert {k: new[k] for k in saved} == saved
+
+
+@pytest.mark.parametrize("field, value", [
+    ("date", "2026/01/05"), ("date", "01-05-2026"), ("date", "2026-02-30"), ("date", "2026-01-05T10:00"),
+    ("date", "tomorrow"), ("time", "12:60"), ("time", "24:00"), ("time", "9am"), ("time", "09:05:00"),
+    ("time", "-1:00"),
+])
+def test_malformed_dates_and_times_are_rejected(client, data_dir, field, value):
+    before = stored(data_dir)
+    assert post(client, {**VALID, field: value}).status_code == 400
+    assert stored(data_dir) == before
+
+
+def test_nonstandard_date_with_reminder_renders_everywhere(client, data_dir):
+    post(client, {**VALID, "date": "2026-10-2", "reminder_days_before": "1"})
+    new = stored(data_dir)[-1]
+    assert new["date"] == "2026-10-02"
+    assert client.get(f"/appointments/{new['id']}").status_code == 200
+    past = client.get("/appointments/").get_data(as_text=True).split('id="past-heading"')[1]
+    assert "Dermatology check" in past  # Oct 2 is before the pinned Oct 20
+
+
+def test_edit_also_saves_canonical_date(client, data_dir):
+    post(client, edit_form(appt(data_dir, 1), date="2026-12-1"), url="/appointments/1/edit")
+    assert appt(data_dir, 1)["date"] == "2026-12-01"
+
+
+# Audit fix: friendly error pages
+@pytest.fixture
+def live_app(data_dir):
+    # Without TESTING, Flask uses our 500 handler instead of raising, like a real run.
+    return create_app({"SECRET_KEY": "test-secret", "DATA_DIR": str(data_dir)})
+
+
+def test_corrupt_file_shows_friendly_page_with_reset_advice(live_app, data_dir):
+    (data_dir / "appointments.json").write_text("[{broken", encoding="utf-8")
+    response = live_app.test_client().get("/appointments/")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 500
+    assert "appointments data file is damaged" in html
+    assert "reset-demo" in html
+    assert "This replaces any changes you made" in html
+    assert "JSONDecodeError" not in html and "Traceback" not in html and str(data_dir) not in html
+
+
+def test_other_errors_show_generic_page_without_reset_advice(live_app, data_dir):
+    # Valid JSON, but a record is missing fields: not corruption, so no reset advice.
+    (data_dir / "appointments.json").write_text(json.dumps([{"id": 1, "date": "2026-11-01"}]), encoding="utf-8")
+    response = live_app.test_client().get("/appointments/")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 500
+    assert "Something went wrong on our side" in html
+    assert "reset-demo" not in html
+    assert "KeyError" not in html and "Traceback" not in html
+
+
+def test_wrong_method_shows_friendly_page(client):
+    response = client.put("/appointments/", data={"csrf_token": get_csrf_token(client)})
+    assert response.status_code == 405
+    assert "Back to MedFlow" in response.get_data(as_text=True)

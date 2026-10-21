@@ -56,6 +56,22 @@ def test_rejects_unsafe_collection_names(name):
         storage.load(name)
 
 
+def test_modify_saves_changes():
+    storage.save("things", [{"id": 1}])
+    with storage.modify("things") as records:
+        records.append({"id": 2})
+    assert storage.load("things") == [{"id": 1}, {"id": 2}]
+
+
+def test_modify_saves_nothing_if_the_block_fails():
+    storage.save("things", [{"id": 1}])
+    with pytest.raises(RuntimeError):
+        with storage.modify("things") as records:
+            records.append({"id": 2})
+            raise RuntimeError("validation failed halfway")
+    assert storage.load("things") == [{"id": 1}]
+
+
 def test_next_id():
     assert storage.next_id([]) == 1
     assert storage.next_id([{"id": 1}, {"id": 7}, {"id": 3}]) == 8

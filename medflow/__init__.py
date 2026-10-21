@@ -4,6 +4,7 @@ from datetime import datetime
 
 import click
 from flask import Flask, abort, redirect, render_template, request, session, url_for
+from werkzeug.exceptions import InternalServerError
 
 from . import storage
 
@@ -46,8 +47,23 @@ def create_app(test_config=None):
 
     @app.errorhandler(400)
     @app.errorhandler(404)
+    @app.errorhandler(405)
     def http_error(e):
         return render_template("error.html", error=e), e.code
+
+    # Only used without --debug; in debug mode Flask shows its debugger instead.
+    # The exception itself is already in the server log; the page never shows it.
+    @app.errorhandler(500)
+    def server_error(e):
+        if isinstance(getattr(e, "original_exception", None), storage.StorageError):
+            message = (
+                f"MedFlow's {e.original_exception.collection} data file is damaged, so nothing was "
+                "changed. Stop the server and run 'flask --app medflow reset-demo' to restore the "
+                "demo data. This replaces any changes you made."
+            )
+        else:
+            message = "Something went wrong on our side. Try again; if it keeps happening, check the terminal running MedFlow."
+        return render_template("error.html", error=InternalServerError(description=message)), 500
 
     from . import appointments
     app.register_blueprint(appointments.bp)
@@ -57,8 +73,12 @@ def create_app(test_config=None):
         return redirect(url_for("appointments.index"))
 
     @app.cli.command("reset-demo")
+    @click.confirmation_option(
+        prompt="This REPLACES all MedFlow data (appointments, tasks, reminders and any changes "
+               "you made) with the fictional demo data. It can't be undone. Continue?"
+    )
     def reset_demo():
-        """Restore all user data from data/seed/ (fictional demo data)."""
+        """Replace all user data with the fictional demo data in data/seed/."""
         storage.reset()
         click.echo(f"Demo data restored in {app.config['DATA_DIR']}")
 

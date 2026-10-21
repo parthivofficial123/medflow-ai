@@ -26,7 +26,7 @@ tests/                  pytest, one file per module
 ```
 
 Rules:
-- Routes never open files. They call `storage.load(name)` / `storage.save(name, records)`.
+- Routes never open files. They read with `storage.load(name)` and change data only inside `with storage.modify(name) as records:` (load → change → save under one lock). Validate before entering `modify`; an exception or `abort()` inside it saves nothing.
 - Logic that is used by one feature lives in that feature's module. Move it to a shared place only when a second feature needs it.
 - Reference data (`procedures`, `providers`, `prices`, `glossary`) is read-only at runtime.
 - Server-rendered first. JavaScript only enhances pages that already work without it.
@@ -39,7 +39,9 @@ Rules:
 - Dates are ISO `YYYY-MM-DD`, times `HH:MM` (24h). Timestamps ISO 8601.
 - Money is stored as **integer cents** (`amount_cents`). Format only in templates.
 - Writes are atomic: write a temp file in the same folder, then `os.replace`.
-- **Concurrent updates are NOT protected.** Load → change → save is last-write-wins, so two simultaneous writes to one collection can lose a change. Acceptable for a single-user local demo; don't add locking unless asked.
+- Concurrent requests are serialized by `storage.modify`'s in-process lock (`flask run` is one process with many threads). It does not protect multiple server processes, and a change spanning two files is two writes, not a transaction. See "Feature integration rules" in `docs/PLAN.md` for the safe write order.
+- Store dates and times canonically (`YYYY-MM-DD`, `HH:MM`): code compares them as strings.
+- Money: parse with `Decimal`, store integer cents, `null` = unknown (never 0). See the expense spec in `docs/PLAN.md`.
 - A missing file loads as `[]`. A corrupt file raises a clear error; never silently overwrite it.
 - Prices always carry `price_type` (e.g. `cash`, `negotiated`, `list`), `source`, and `as_of`.
 
@@ -58,7 +60,8 @@ Rules:
 - `SECRET_KEY` comes from the environment; the dev fallback is only for local runs.
 - Every POST form includes the CSRF token from `base.html`; `create_app` rejects POSTs without it.
 - Look up records by integer id only; never build file paths from user input.
-- Run with `--debug` only on 127.0.0.1.
+- Run with `--debug` only on 127.0.0.1. Never combine `--debug` with `--host`: it exposes the interactive debugger to the network.
+- Error pages never show exceptions, tracebacks or file paths. `reset-demo` is only suggested when a data file is confirmed corrupt (`StorageError`).
 
 ## How to work in this repo
 
@@ -76,6 +79,6 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
 flask --app medflow run --debug          # http://127.0.0.1:5000
-flask --app medflow reset-demo           # restore instance/ from data/seed/
+flask --app medflow reset-demo           # REPLACES instance/ data with data/seed/ (asks first; --yes skips)
 pytest
 ```

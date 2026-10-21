@@ -6,24 +6,41 @@ Writes are atomic: ``save`` writes a temp file in the same folder, flushes it to
 disk, then swaps it in with ``os.replace``. A crash or error mid-write leaves the
 previous file intact, never a half-written one.
 
-NOT protected: concurrent updates. A route does load -> change -> save, so two
-requests changing the same collection at the same moment can lose one of the
-changes (last write wins). That is acceptable for a single-user local demo on the
-Flask dev server; anything multi-user needs a file lock or a real database.
+Every change goes through ``modify``, which loads, lets the caller change the
+records, and saves, all while holding one lock. ``flask run`` serves requests on
+several threads, so without this two requests could both load the same data and
+the second save would silently drop the first change. ``load`` takes the same
+lock because on Windows ``os.replace`` fails while another thread has the file
+open for reading.
+
+Limits:
+- The lock lives in this process. It is right for ``flask run`` (one process,
+  many threads), not for several server processes or two apps sharing a folder.
+- Each file write is atomic, but a change that spans two collections is two
+  writes. A crash between them can leave the files out of step, so pages must
+  tolerate references to records that no longer exist.
 """
 
 import json
 import os
 import re
 import tempfile
+import threading
+from contextlib import contextmanager
 
 from flask import current_app
 
 _NAME = re.compile(r"[a-z_]+")
+# Re-entrant so modify() can call load()/save(), and one modify() can nest another.
+_lock = threading.RLock()
 
 
 class StorageError(Exception):
-    """A data file exists but cannot be used. Never overwritten automatically."""
+    """A data file exists but is corrupt. Never overwritten automatically."""
+
+    def __init__(self, collection: str, detail: str):
+        super().__init__(f"{collection}.json {detail}")
+        self.collection = collection
 
 
 def _path(name: str, folder: str | None = None) -> str:
@@ -37,33 +54,46 @@ def load(name: str) -> list[dict]:
     """Return all records in a collection; a missing file is an empty collection."""
     path = _path(name)
     try:
-        with open(path, encoding="utf-8") as f:
+        with _lock, open(path, encoding="utf-8") as f:
             records = json.load(f)
     except FileNotFoundError:
         return []
     except json.JSONDecodeError as e:
-        raise StorageError(
-            f"{path} is not valid JSON ({e}). Fix it by hand or run "
-            "'flask --app medflow reset-demo'."
-        ) from e
+        raise StorageError(name, f"is not valid JSON ({e}). Path: {path}") from e
     if not isinstance(records, list):
-        raise StorageError(f"{path} must contain a JSON list.")
+        raise StorageError(name, f"must contain a JSON list. Path: {path}")
     return records
 
 
 def save(name: str, records: list[dict]) -> None:
-    """Replace a collection's file atomically."""
+    """Replace a collection's file atomically. Routes use modify() instead."""
     path = _path(name)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=f".{name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(records, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        os.remove(tmp)
-        raise
+    with _lock:
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=f".{name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(records, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            os.remove(tmp)
+            raise
+
+
+@contextmanager
+def modify(name: str):
+    """Load -> change -> save as one locked step.
+
+        with storage.modify("appointments") as records:
+            records.append(...)
+
+    If the block raises (including abort(404)), nothing is saved.
+    """
+    with _lock:
+        records = load(name)
+        yield records
+        save(name, records)
 
 
 def next_id(records: list[dict]) -> int:

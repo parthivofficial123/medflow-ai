@@ -39,7 +39,11 @@ def inject_choices():
 
 
 def validate(form):
-    """Return (clean data, errors). Values are kept even when invalid so the form can redisplay them."""
+    """Return (clean data, errors). Values are kept even when invalid so the form can redisplay them.
+
+    Valid dates and times are stored in canonical form (YYYY-MM-DD, HH:MM): sorting,
+    the upcoming/past split and reminders all compare them as strings.
+    """
     data = {name: form.get(name, "").strip() for name in FIELDS}
     errors = {}
     for name, (label, required, max_len) in FIELDS.items():
@@ -50,14 +54,16 @@ def validate(form):
 
     if "date" not in errors:
         try:
-            year = datetime.strptime(data["date"], "%Y-%m-%d").year
-            if not 2000 <= year <= 2100:
+            parsed = datetime.strptime(data["date"], "%Y-%m-%d")
+            if not 2000 <= parsed.year <= 2100:
                 errors["date"] = "Enter a date between 2000 and 2100."
+            else:
+                data["date"] = parsed.strftime("%Y-%m-%d")
         except ValueError:
             errors["date"] = "Enter a valid date (YYYY-MM-DD)."
     if "time" not in errors:
         try:
-            datetime.strptime(data["time"], "%H:%M")
+            data["time"] = datetime.strptime(data["time"], "%H:%M").strftime("%H:%M")
         except ValueError:
             errors["time"] = "Enter a valid time (HH:MM)."
 
@@ -79,12 +85,10 @@ def reminder_due(appt, on):
     return visit - timedelta(days=days) <= on <= visit
 
 
-def load_one(appt_id):
-    """Return (all records, the matching record) or 404."""
-    records = storage.load("appointments")
+def find(records, appt_id):
     for appt in records:
         if appt["id"] == appt_id:
-            return records, appt
+            return appt
     abort(404)
 
 
@@ -146,57 +150,58 @@ def create():
     if errors:
         return render_list(form=data, errors=errors, status=400)
 
-    records = storage.load("appointments")
-    records.append({
-        "id": storage.next_id(records),
-        **data,
-        "status": "scheduled",
-        "reminder_dismissed": False,
-        "tasks": [],
-        "created_at": now_iso(),
-    })
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        records.append({
+            "id": storage.next_id(records),
+            **data,
+            "status": "scheduled",
+            "reminder_dismissed": False,
+            "tasks": [],
+            "created_at": now_iso(),
+        })
     flash(f"Added: {data['reason']} with {data['provider']}.", "success")
     return redirect(url_for(".index"))
 
 
 @bp.get("/<int:appt_id>")
 def detail(appt_id):
-    return render_detail(load_one(appt_id)[1])
+    return render_detail(find(storage.load("appointments"), appt_id))
 
 
 @bp.get("/<int:appt_id>/edit")
 def edit(appt_id):
-    appt = load_one(appt_id)[1]
+    appt = find(storage.load("appointments"), appt_id)
     return render_template("appointments/edit.html", a=appt, form=appt, errors={})
 
 
 @bp.post("/<int:appt_id>/edit")
 def update(appt_id):
-    records, appt = load_one(appt_id)
     data, errors = validate(request.form)
     if errors:
+        appt = find(storage.load("appointments"), appt_id)
         return render_template("appointments/edit.html", a=appt, form=data, errors=errors), 400
 
-    # A new date or reminder setting is a new reminder, so show it again.
-    if (data["date"], data["reminder_days_before"]) != (appt["date"], appt.get("reminder_days_before")):
-        appt["reminder_dismissed"] = False
-    appt.update(data, updated_at=now_iso())
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        appt = find(records, appt_id)
+        # A new date or reminder setting is a new reminder, so show it again.
+        if (data["date"], data["reminder_days_before"]) != (appt["date"], appt.get("reminder_days_before")):
+            appt["reminder_dismissed"] = False
+        appt.update(data, updated_at=now_iso())
     flash("Changes saved.", "success")
     return to_detail(appt_id)
 
 
 @bp.get("/<int:appt_id>/delete")
 def confirm_delete(appt_id):
-    return render_template("appointments/confirm_delete.html", a=load_one(appt_id)[1])
+    appt = find(storage.load("appointments"), appt_id)
+    return render_template("appointments/confirm_delete.html", a=appt)
 
 
 @bp.post("/<int:appt_id>/delete")
 def delete(appt_id):
-    records, appt = load_one(appt_id)
-    records.remove(appt)
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        appt = find(records, appt_id)
+        records.remove(appt)
     flash(f"Deleted: {appt['reason']} with {appt['provider']}.", "success")
     return redirect(url_for(".index"))
 
@@ -206,18 +211,16 @@ def set_status(appt_id):
     status = request.form.get("status")
     if status not in STATUSES:
         abort(400, description="That status isn't one MedFlow knows.")
-    records, appt = load_one(appt_id)
-    appt["status"] = status
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        find(records, appt_id)["status"] = status
     flash(f"Marked as {status}.", "success")
     return to_detail(appt_id)
 
 
 @bp.post("/<int:appt_id>/reminder/dismiss")
 def dismiss_reminder(appt_id):
-    records, appt = load_one(appt_id)
-    appt["reminder_dismissed"] = True
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        find(records, appt_id)["reminder_dismissed"] = True
     flash("Reminder dismissed.", "success")
     # Only two known destinations, so no open redirect.
     if request.form.get("next") == "list":
@@ -227,7 +230,6 @@ def dismiss_reminder(appt_id):
 
 @bp.post("/<int:appt_id>/tasks")
 def add_task(appt_id):
-    records, appt = load_one(appt_id)
     text = request.form.get("text", "").strip()
     error = None
     if not text:
@@ -235,28 +237,28 @@ def add_task(appt_id):
     elif len(text) > TASK_MAX:
         error = f"Tasks must be {TASK_MAX} characters or fewer."
     if error:
+        appt = find(storage.load("appointments"), appt_id)
         return render_detail(appt, task_text=text, task_error=error, status=400)
 
-    tasks = appt.setdefault("tasks", [])
-    tasks.append({"id": storage.next_id(tasks), "text": text, "done": False})
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        tasks = find(records, appt_id).setdefault("tasks", [])
+        tasks.append({"id": storage.next_id(tasks), "text": text, "done": False})
     flash("Follow-up task added.", "success")
     return to_detail(appt_id, "#tasks")
 
 
 @bp.post("/<int:appt_id>/tasks/<int:task_id>/toggle")
 def toggle_task(appt_id, task_id):
-    records, appt = load_one(appt_id)
-    task = find_task(appt, task_id)
-    task["done"] = not task["done"]
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        task = find_task(find(records, appt_id), task_id)
+        task["done"] = not task["done"]
     return to_detail(appt_id, "#tasks")
 
 
 @bp.post("/<int:appt_id>/tasks/<int:task_id>/delete")
 def delete_task(appt_id, task_id):
-    records, appt = load_one(appt_id)
-    appt["tasks"].remove(find_task(appt, task_id))
-    storage.save("appointments", records)
+    with storage.modify("appointments") as records:
+        appt = find(records, appt_id)
+        appt["tasks"].remove(find_task(appt, task_id))
     flash("Follow-up task removed.", "success")
     return to_detail(appt_id, "#tasks")
