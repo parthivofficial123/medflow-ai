@@ -112,10 +112,7 @@
                   <button class="btn btn--secondary btn--sm" type="submit" name="action" value="paid">Mark paid</button>
                 </form>
               {% elif st == "paid" and e.paid_cents %}
-                <form method="post" action="{{ url_for('expenses.set_payment', expense_id=e.id) }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn--secondary btn--sm" type="submit" name="action" value="unpaid">Mark unpaid</button>
-                </form>
+                <a class="btn btn--secondary btn--sm" href="{{ url_for('expenses.confirm_unpaid', expense_id=e.id) }}">Mark unpaid<span class="visually-hidden"> {{ e.description or categories[e.category] }}</span></a>
               {% endif %}
               <a class="btn btn--secondary btn--sm" href="{{ url_for('expenses.edit', expense_id=e.id) }}">Edit<span class="visually-hidden"> {{ e.description or categories[e.category] }}</span></a>
               <a class="btn btn--danger-outline btn--sm" href="{{ url_for('expenses.confirm_delete', expense_id=e.id) }}">Delete<span class="visually-hidden"> {{ e.description or categories[e.category] }}</span></a>

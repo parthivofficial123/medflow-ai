@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Mark expense unpaid{% endblock %}
+
+{% block content %}
+<section class="card panel confirm" aria-labelledby="confirm-heading">
+  <h1 id="confirm-heading" class="detail__title">Clear the recorded payment?</h1>
+  <p>
+    <strong>{{ e.description or categories[e.category] }}</strong> from {{ e.provider }}, {{ e.date|fmt_date }}.
+    This clears the <strong>{{ e.paid_cents|money }}</strong> recorded as paid, so the full
+    {{ e.actual_cents|money }} shows as unpaid again.
+  </p>
+  <p class="muted">To record a partial payment instead, edit the expense.</p>
+  <form class="actions" method="post" action="{{ url_for('expenses.set_payment', expense_id=e.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="unpaid">
+    <input type="hidden" name="confirmed" value="yes">
+    <button class="btn btn--danger" type="submit">Clear {{ e.paid_cents|money }} payment</button>
+    <a class="btn btn--secondary" href="{{ url_for('expenses.edit', expense_id=e.id) }}">Edit instead</a>
+    <a class="btn btn--secondary" href="{{ url_for('expenses.index') }}#expense-{{ e.id }}">Keep it</a>
+  </form>
+</section>
+{% endblock %}

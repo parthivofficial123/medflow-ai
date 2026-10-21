@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
-from . import dates, storage
+from . import dates, money, storage
 
 bp = Blueprint("expenses", __name__, url_prefix="/expenses")
 
@@ -270,6 +270,29 @@ def update(expense_id):
     return redirect(url_for(".index") + f"#expense-{expense_id}")
 
 
+def unpaid_blocker(expense):
+    """Why one-step "Mark unpaid" isn't allowed, or None.
+
+    Only a fully paid bill can be cleared that way (after confirming). A partial payment or
+    a deposit on an unbilled expense is real information, so it changes only via the edit form.
+    """
+    paid, actual = expense.get("paid_cents", 0), expense.get("actual_cents")
+    if paid == 0:
+        return "There's no recorded payment to clear."
+    if actual is None or paid < actual:
+        return f"This expense has a partial payment of {money(paid)}. Edit the expense to change it."
+    return None
+
+
+@bp.get("/<int:expense_id>/unpaid")
+def confirm_unpaid(expense_id):
+    expense = find(storage.load("expenses"), expense_id)
+    blocker = unpaid_blocker(expense)
+    if blocker:
+        abort(400, description=blocker)
+    return render_template("expenses/confirm_unpaid.html", e=expense)
+
+
 @bp.post("/<int:expense_id>/payment")
 def set_payment(expense_id):
     action = request.form.get("action")
@@ -282,6 +305,12 @@ def set_payment(expense_id):
                 abort(400, description="Record the billed amount before marking this expense paid.")
             expense["paid_cents"] = expense["actual_cents"]
         else:
+            # Checked here too, not just on the confirmation page, so a direct POST can't skip it.
+            blocker = unpaid_blocker(expense)
+            if blocker:
+                abort(400, description=blocker)
+            if request.form.get("confirmed") != "yes":
+                abort(400, description="Confirm before clearing a recorded payment.")
             expense["paid_cents"] = 0
         expense["updated_at"] = now_iso()
     flash(f"Marked as {action}.", "success")

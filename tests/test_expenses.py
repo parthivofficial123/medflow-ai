@@ -253,11 +253,57 @@ def test_invalid_edit_writes_nothing(client, data_dir):
     assert stored(data_dir) == before
 
 
-def test_mark_paid_and_unpaid(client, data_dir):
+def test_mark_paid_then_unpaid_with_confirmation(client, data_dir):
     assert post(client, {"action": "paid"}, url="/expenses/3/payment").status_code == 302
     assert expense(data_dir, 3)["paid_cents"] == 9800
-    assert post(client, {"action": "unpaid"}, url="/expenses/3/payment").status_code == 302
+    assert post(client, {"action": "unpaid", "confirmed": "yes"}, url="/expenses/3/payment").status_code == 302
     assert expense(data_dir, 3)["paid_cents"] == 0
+
+
+# Payment protection: clearing a payment never happens silently
+def test_mark_unpaid_without_confirmation_is_rejected(client, data_dir):
+    before = expense(data_dir, 4)  # fully paid $18.99
+    response = post(client, {"action": "unpaid"}, url="/expenses/4/payment")
+    assert response.status_code == 400
+    assert "Confirm before clearing" in response.get_data(as_text=True)
+    assert expense(data_dir, 4) == before
+
+
+def test_mark_unpaid_link_goes_to_confirmation_page(client):
+    html = client.get("/expenses/").get_data(as_text=True)
+    card = html.split('id="expense-4"')[1].split("</li>")[0]
+    assert 'href="/expenses/4/unpaid"' in card
+    assert 'value="unpaid"' not in card  # no one-click form on the list
+
+    page = client.get("/expenses/4/unpaid").get_data(as_text=True)
+    assert "Clear the recorded payment?" in page
+    assert "$18.99" in page
+    assert 'name="confirmed" value="yes"' in page
+
+
+@pytest.mark.parametrize("expense_id, why", [
+    (5, "partial payment of $50.00"),    # partly paid bill
+    (7, "partial payment of $100.00"),   # deposit, not billed yet
+    (3, "no recorded payment"),          # unpaid bill
+])
+def test_partial_payments_and_deposits_cannot_be_cleared_in_one_step(client, data_dir, expense_id, why):
+    before = expense(data_dir, expense_id)
+    assert why in client.get(f"/expenses/{expense_id}/unpaid").get_data(as_text=True)
+    response = post(client, {"action": "unpaid", "confirmed": "yes"}, url=f"/expenses/{expense_id}/payment")
+    assert response.status_code == 400
+    assert why in response.get_data(as_text=True)
+    assert expense(data_dir, expense_id) == before
+
+
+def test_partial_payment_still_editable_on_edit_form(client, data_dir):
+    form = {**VALID, "category": "therapy", "provider": "Harborview Physical Therapy (fictional)",
+            "description": "Physical therapy session", "estimated": "120", "actual": "135.50", "paid": "0"}
+    assert post(client, form, url="/expenses/5/edit").status_code == 302
+    assert expense(data_dir, 5)["paid_cents"] == 0
+
+
+def test_confirm_unpaid_for_unknown_expense_is_404(client):
+    assert client.get("/expenses/999/unpaid").status_code == 404
 
 
 def test_cannot_mark_paid_before_billed(client, data_dir):
