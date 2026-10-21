@@ -1,0 +1,13 @@
+{# Shared by the add form (list.html) and edit.html. Expects form, errors, reminder_choices. #}
+{% from "_macros.html" import field, select_field, error_summary %}
+{{ error_summary(errors) }}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="field-row">
+  {{ field("date", "Date", form, errors, type="date", required=true) }}
+  {{ field("time", "Time", form, errors, type="time", required=true) }}
+</div>
+{{ field("reason", "Reason for visit", form, errors, required=true, maxlength=120, placeholder="e.g. Annual physical") }}
+{{ field("provider", "Provider", form, errors, required=true, maxlength=100, placeholder="e.g. Dr. Lee (fictional)") }}
+{{ field("location", "Location", form, errors, maxlength=120, placeholder="Clinic or address") }}
+{{ select_field("reminder_days_before", "Reminder", reminder_choices, form, errors, hint="Shown in MedFlow until the visit. No email or texts.") }}
+{{ field("notes", "Notes", form, errors, maxlength=1000, textarea=true, hint="Prep instructions, questions to ask, what to bring.") }}

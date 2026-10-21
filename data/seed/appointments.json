@@ -7,7 +7,12 @@
     "location": "Maple Grove Family Clinic",
     "reason": "Annual physical",
     "notes": "Bring list of current vitamins.",
+    "reminder_days_before": 3,
+    "reminder_dismissed": false,
     "status": "scheduled",
+    "tasks": [
+      {"id": 1, "text": "Write down vitamin names and doses", "done": false}
+    ],
     "created_at": "2026-10-01T10:00:00"
   },
   {
@@ -18,7 +23,13 @@
     "location": "Lakeside Imaging Center",
     "reason": "Knee MRI",
     "notes": "No metal jewelry. Arrive 15 minutes early.",
+    "reminder_days_before": 2,
+    "reminder_dismissed": false,
     "status": "scheduled",
+    "tasks": [
+      {"id": 1, "text": "Bring referral letter", "done": false},
+      {"id": 2, "text": "Check parking options", "done": true}
+    ],
     "created_at": "2026-10-02T15:30:00"
   },
   {
@@ -29,7 +40,10 @@
     "location": "Brightpath Lab, Suite 2",
     "reason": "Fasting blood work",
     "notes": "No food after midnight.",
+    "reminder_days_before": 1,
+    "reminder_dismissed": false,
     "status": "scheduled",
+    "tasks": [],
     "created_at": "2026-10-02T15:45:00"
   },
   {
@@ -40,7 +54,42 @@
     "location": "Harborview Orthopedics",
     "reason": "Follow-up on knee MRI results",
     "notes": "",
+    "reminder_days_before": null,
+    "reminder_dismissed": false,
     "status": "scheduled",
+    "tasks": [
+      {"id": 1, "text": "Write down questions about recovery time", "done": false}
+    ],
     "created_at": "2026-10-05T09:10:00"
+  },
+  {
+    "id": 5,
+    "date": "2026-09-12",
+    "time": "16:00",
+    "provider": "Maple Grove Pharmacy (fictional)",
+    "location": "Maple Grove Family Clinic",
+    "reason": "Flu shot",
+    "notes": "",
+    "reminder_days_before": null,
+    "reminder_dismissed": false,
+    "status": "completed",
+    "tasks": [
+      {"id": 1, "text": "Log the copay as an expense", "done": true}
+    ],
+    "created_at": "2026-09-01T08:20:00"
+  },
+  {
+    "id": 6,
+    "date": "2026-09-28",
+    "time": "10:30",
+    "provider": "Dr. Lena Marsh (fictional)",
+    "location": "Bayside Dental",
+    "reason": "Dental cleaning",
+    "notes": "Cancelled to reschedule after checking dental coverage.",
+    "reminder_days_before": null,
+    "reminder_dismissed": false,
+    "status": "cancelled",
+    "tasks": [],
+    "created_at": "2026-09-10T12:00:00"
   }
 ]

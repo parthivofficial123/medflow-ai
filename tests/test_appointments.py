@@ -1,9 +1,17 @@
 import json
+from datetime import date
 
 import pytest
 
-from medflow import create_app
+from medflow import appointments, create_app
 from tests.conftest import get_csrf_token
+
+TODAY = date(2026, 10, 20)
+
+
+@pytest.fixture(autouse=True)
+def pin_today(monkeypatch):
+    monkeypatch.setattr(appointments, "today", lambda: TODAY)
 
 VALID = {
     "date": "2026-11-20",
@@ -19,13 +27,17 @@ def stored(data_dir):
     return json.loads((data_dir / "appointments.json").read_text(encoding="utf-8"))
 
 
-def post(client, data, token="fetch"):
+def post(client, data, token="fetch", url="/appointments/"):
     form = dict(data)
     if token == "fetch":
         form["csrf_token"] = get_csrf_token(client)
     elif token is not None:
         form["csrf_token"] = token
-    return client.post("/appointments/", data=form)
+    return client.post(url, data=form)
+
+
+def appt(data_dir, appt_id):
+    return next(a for a in stored(data_dir) if a["id"] == appt_id)
 
 
 # S1
@@ -158,3 +170,249 @@ def test_unknown_page_is_a_friendly_404(client):
     response = client.get("/nope")
     assert response.status_code == 404
     assert "Back to MedFlow" in response.get_data(as_text=True)
+
+
+def test_new_appointment_has_reminder_and_empty_task_list(client, data_dir):
+    post(client, {**VALID, "reminder_days_before": "2"})
+    new = stored(data_dir)[-1]
+    assert new["reminder_days_before"] == 2
+    assert new["reminder_dismissed"] is False
+    assert new["tasks"] == []
+
+
+def test_invalid_reminder_choice_is_rejected(client, data_dir):
+    before = stored(data_dir)
+    response = post(client, {**VALID, "reminder_days_before": "99"})
+    assert response.status_code == 400
+    assert "Choose a reminder from the list." in response.get_data(as_text=True)
+    assert stored(data_dir) == before
+
+
+# A1: detail, edit, delete
+def test_detail_page_shows_appointment(client):
+    html = client.get("/appointments/2").get_data(as_text=True)
+    assert "Knee MRI" in html
+    assert "Lakeside Imaging Center" in html
+    assert "Bring referral letter" in html
+
+
+@pytest.mark.parametrize("path", ["/appointments/999", "/appointments/999/edit", "/appointments/999/delete"])
+def test_unknown_appointment_is_404(client, path):
+    assert client.get(path).status_code == 404
+
+
+@pytest.mark.parametrize("path", [
+    "/appointments/999/edit", "/appointments/999/delete", "/appointments/999/status",
+    "/appointments/999/tasks", "/appointments/999/reminder/dismiss",
+    "/appointments/1/tasks/999/toggle", "/appointments/1/tasks/999/delete",
+])
+def test_posts_to_unknown_ids_are_404(client, path):
+    assert post(client, {**VALID, "status": "completed", "text": "x"}, url=path).status_code == 404
+
+
+def test_edit_form_is_prefilled(client):
+    html = client.get("/appointments/2/edit").get_data(as_text=True)
+    assert 'value="Knee MRI"' in html
+    assert 'value="2026-11-04"' in html
+    assert '<option value="2" selected>' in html
+    assert ">No metal jewelry. Arrive 15 minutes early.</textarea>" in html
+
+
+def test_edit_saves_changes_and_keeps_tasks_and_status(client, data_dir):
+    before = appt(data_dir, 2)
+    response = post(client, {**VALID, "reason": "Knee MRI with contrast"}, url="/appointments/2/edit")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/appointments/2")
+
+    after = appt(data_dir, 2)
+    assert after["reason"] == "Knee MRI with contrast"
+    assert after["tasks"] == before["tasks"]
+    assert after["status"] == before["status"]
+    assert after["created_at"] == before["created_at"]
+    assert "updated_at" in after
+    assert "Changes saved." in client.get("/appointments/2").get_data(as_text=True)
+
+
+def test_invalid_edit_shows_errors_keeps_input_and_writes_nothing(client, data_dir):
+    before = stored(data_dir)
+    form = {**VALID, "date": "", "provider": "Dr. Kept Value (fictional)"}
+    response = post(client, form, url="/appointments/2/edit")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 400
+    assert "Date is required." in html
+    assert 'value="Dr. Kept Value (fictional)"' in html
+    assert stored(data_dir) == before
+
+
+def test_delete_asks_for_confirmation_first(client, data_dir):
+    html = client.get("/appointments/2/delete").get_data(as_text=True)
+    assert "Delete this appointment?" in html
+    assert "2 follow-up tasks will be deleted too" in html
+    assert len(stored(data_dir)) == 6
+
+
+def test_delete_removes_appointment(client, data_dir):
+    response = post(client, {}, url="/appointments/2/delete")
+    assert response.status_code == 302
+    assert [a["id"] for a in stored(data_dir)] == [1, 3, 4, 5, 6]
+    assert "Deleted: Knee MRI" in client.get("/appointments/").get_data(as_text=True)
+
+
+def test_delete_without_csrf_is_rejected(client, data_dir):
+    assert post(client, {}, token=None, url="/appointments/2/delete").status_code == 400
+    assert len(stored(data_dir)) == 6
+
+
+# A2: upcoming / past, status
+def test_upcoming_and_past_are_listed_separately(client):
+    html = client.get("/appointments/").get_data(as_text=True)
+    upcoming, past = html.split('id="past-heading"')
+    assert "Annual physical" in upcoming and "Follow-up on knee MRI results" in upcoming
+    assert "Flu shot" in past and "Dental cleaning" in past
+    assert "Flu shot" not in upcoming
+    assert past.index("Dental cleaning") < past.index("Flu shot")  # newest first
+
+
+def test_today_counts_as_upcoming(client):
+    post(client, {**VALID, "date": TODAY.isoformat(), "reason": "Same-day visit"})
+    upcoming = client.get("/appointments/").get_data(as_text=True).split('id="past-heading"')[0]
+    assert "Same-day visit" in upcoming
+
+
+def test_cancelled_appointment_is_marked(client):
+    html = client.get("/appointments/").get_data(as_text=True)
+    assert "appt--cancelled" in html
+    assert 'pill--cancelled">Cancelled' in html
+
+
+@pytest.mark.parametrize("status", ["completed", "cancelled", "scheduled"])
+def test_status_can_be_changed(client, data_dir, status):
+    response = post(client, {"status": status}, url="/appointments/1/status")
+    assert response.status_code == 302
+    assert appt(data_dir, 1)["status"] == status
+
+
+def test_unknown_status_is_rejected(client, data_dir):
+    assert post(client, {"status": "deleted"}, url="/appointments/1/status").status_code == 400
+    assert appt(data_dir, 1)["status"] == "scheduled"
+
+
+# A3: follow-up tasks
+def test_add_task(client, data_dir):
+    response = post(client, {"text": "  Pick up prescription  "}, url="/appointments/3/tasks")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/appointments/3#tasks")
+    assert appt(data_dir, 3)["tasks"] == [{"id": 1, "text": "Pick up prescription", "done": False}]
+
+
+@pytest.mark.parametrize("text, message", [("", "Enter a follow-up task."), ("x" * 201, "200 characters or fewer")])
+def test_invalid_task_is_rejected_and_input_kept(client, data_dir, text, message):
+    before = stored(data_dir)
+    response = post(client, {"text": text}, url="/appointments/3/tasks")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 400
+    assert message in html
+    assert f'value="{text}"' in html
+    assert stored(data_dir) == before
+
+
+def test_toggle_task_checks_and_unchecks(client, data_dir):
+    post(client, {}, url="/appointments/2/tasks/1/toggle")
+    assert appt(data_dir, 2)["tasks"][0]["done"] is True
+    post(client, {}, url="/appointments/2/tasks/1/toggle")
+    assert appt(data_dir, 2)["tasks"][0]["done"] is False
+
+
+def test_delete_task(client, data_dir):
+    post(client, {}, url="/appointments/2/tasks/1/delete")
+    assert [t["id"] for t in appt(data_dir, 2)["tasks"]] == [2]
+
+
+def test_task_ids_stay_unique_after_delete(client, data_dir):
+    post(client, {}, url="/appointments/2/tasks/1/delete")
+    post(client, {"text": "New task"}, url="/appointments/2/tasks")
+    assert [t["id"] for t in appt(data_dir, 2)["tasks"]] == [2, 3]
+
+
+def test_task_toggle_without_csrf_is_rejected(client, data_dir):
+    assert post(client, {}, token=None, url="/appointments/2/tasks/1/toggle").status_code == 400
+    assert appt(data_dir, 2)["tasks"][0]["done"] is False
+
+
+# A4: reminders
+def reminder(days, status="scheduled", dismissed=False):
+    return {"date": "2026-10-23", "reminder_days_before": days, "status": status, "reminder_dismissed": dismissed}
+
+
+@pytest.mark.parametrize("record, on, expected", [
+    (reminder(3), date(2026, 10, 19), False),  # 4 days before: not yet
+    (reminder(3), date(2026, 10, 20), True),   # exactly N days before
+    (reminder(3), date(2026, 10, 23), True),   # visit day
+    (reminder(3), date(2026, 10, 24), False),  # visit passed
+    (reminder(0), date(2026, 10, 23), True),   # "on the day"
+    (reminder(0), date(2026, 10, 22), False),
+    (reminder(None), date(2026, 10, 23), False),
+    (reminder(3, dismissed=True), date(2026, 10, 21), False),
+    (reminder(3, status="cancelled"), date(2026, 10, 21), False),
+    (reminder(3, status="completed"), date(2026, 10, 21), False),
+    ({"date": "2026-10-23", "status": "scheduled"}, date(2026, 10, 23), False),  # Day 1 record
+])
+def test_reminder_due(record, on, expected):
+    assert appointments.reminder_due(record, on) is expected
+
+
+def test_due_reminder_shows_on_list(client):
+    html = client.get("/appointments/").get_data(as_text=True)
+    panel = html.split('class="reminders"')[1].split("</section>")[0]
+    assert "Annual physical" in panel
+    assert "in 3 days" in panel
+    assert "Knee MRI" not in panel  # its 2-day reminder starts Nov 2
+
+
+def test_dismiss_hides_reminder(client, data_dir):
+    response = post(client, {"next": "list"}, url="/appointments/1/reminder/dismiss")
+    assert response.headers["Location"].endswith("/appointments/")
+    assert appt(data_dir, 1)["reminder_dismissed"] is True
+    assert 'class="reminders"' not in client.get("/appointments/").get_data(as_text=True)
+
+
+def test_dismiss_ignores_unknown_next_target(client):
+    response = post(client, {"next": "https://evil.example"}, url="/appointments/1/reminder/dismiss")
+    assert response.headers["Location"].endswith("/appointments/1")
+
+
+def edit_form(record, **changes):
+    fields = {k: record[k] for k in ("date", "time", "reason", "provider", "location", "notes")}
+    return {**fields, "reminder_days_before": str(record["reminder_days_before"]), **changes}
+
+
+def test_changing_date_turns_dismissed_reminder_back_on(client, data_dir):
+    post(client, {}, url="/appointments/1/reminder/dismiss")
+    post(client, edit_form(appt(data_dir, 1), date="2026-10-22"), url="/appointments/1/edit")
+    assert appt(data_dir, 1)["reminder_dismissed"] is False
+
+
+def test_editing_other_fields_keeps_reminder_dismissed(client, data_dir):
+    post(client, {}, url="/appointments/1/reminder/dismiss")
+    post(client, edit_form(appt(data_dir, 1), reason="Annual physical exam"), url="/appointments/1/edit")
+    assert appt(data_dir, 1)["reminder_dismissed"] is True
+
+
+def test_day_one_records_without_new_fields_still_work(client, data_dir):
+    (data_dir / "appointments.json").write_text(json.dumps([{
+        "id": 1, "date": "2026-11-01", "time": "09:00", "provider": "Dr. Old (fictional)",
+        "location": "", "reason": "Old record", "notes": "", "status": "scheduled",
+    }]), encoding="utf-8")
+    assert client.get("/appointments/").status_code == 200
+    assert client.get("/appointments/1").status_code == 200
+    assert client.get("/appointments/1/edit").status_code == 200
+    assert post(client, {"text": "First task"}, url="/appointments/1/tasks").status_code == 302
+
+
+# A5: reset-demo
+def test_reset_demo_command_restores_seed(app, data_dir):
+    (data_dir / "appointments.json").write_text("[]", encoding="utf-8")
+    result = app.test_cli_runner().invoke(args=["reset-demo"])
+    assert result.exit_code == 0
+    assert "Demo data restored" in result.output
+    assert len(stored(data_dir)) == 6

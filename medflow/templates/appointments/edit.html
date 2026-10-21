@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ a.reason }}{% endblock %}
+
+{% block content %}
+<a class="back-link" href="{{ url_for('appointments.detail', appt_id=a.id) }}">&larr; Back to appointment</a>
+
+<section class="card form-card form-card--page" aria-labelledby="edit-heading">
+  <h1 id="edit-heading" class="form-card__title">Edit appointment</h1>
+  <form method="post" action="{{ url_for('appointments.update', appt_id=a.id) }}" novalidate>
+    {% include "appointments/_fields.html" %}
+    <div class="actions">
+      <button class="btn btn--primary" type="submit">Save changes</button>
+      <a class="btn btn--secondary" href="{{ url_for('appointments.detail', appt_id=a.id) }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

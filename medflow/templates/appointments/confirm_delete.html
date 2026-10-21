@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Delete {{ a.reason }}{% endblock %}
+
+{% block content %}
+{% set tasks = a.get("tasks") or [] %}
+<section class="card panel confirm" aria-labelledby="confirm-heading">
+  <h1 id="confirm-heading" class="detail__title">Delete this appointment?</h1>
+  <p><strong>{{ a.reason }}</strong> with {{ a.provider }}, {{ a.date|fmt_date }} at {{ a.time|fmt_time }}.</p>
+  <p class="muted">
+    {% if tasks %}Its {{ tasks|length }} follow-up {{ "task" if tasks|length == 1 else "tasks" }} will be deleted too. {% endif %}
+    This can't be undone.
+  </p>
+  <form class="actions" method="post" action="{{ url_for('appointments.delete', appt_id=a.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn--danger" type="submit">Delete appointment</button>
+    <a class="btn btn--secondary" href="{{ url_for('appointments.detail', appt_id=a.id) }}">Keep it</a>
+  </form>
+</section>
+{% endblock %}

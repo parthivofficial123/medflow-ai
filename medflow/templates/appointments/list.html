@@ -1,77 +1,107 @@
 {% extends "base.html" %}
-{% from "_macros.html" import field %}
 {% block title %}Appointments{% endblock %}
+
+{% macro card(a) %}
+  {% set d = a.date|to_date %}
+  {% set tasks = a.get("tasks") or [] %}
+  <li class="card appt appt--{{ a.status }}">
+    <div class="appt__date" aria-hidden="true">
+      <span class="appt__month">{{ d.strftime("%b") }}</span>
+      <span class="appt__day">{{ d.day }}</span>
+    </div>
+    <div class="appt__body">
+      <div class="appt__top">
+        <h3 class="appt__title">
+          <a class="appt__link" href="{{ url_for('appointments.detail', appt_id=a.id) }}">{{ a.reason }}</a>
+        </h3>
+        <span class="pill pill--{{ a.status }}">{{ a.status|capitalize }}</span>
+      </div>
+      <p class="appt__meta">
+        <time datetime="{{ a.date }}T{{ a.time }}">{{ a.date|fmt_date }} · {{ a.time|fmt_time }}</time>
+      </p>
+      <p class="appt__meta">{{ a.provider }}{% if a.location %} · {{ a.location }}{% endif %}</p>
+      {% if tasks or (a.get("reminder_days_before") is not none and a.status == "scheduled") %}
+        <p class="chips">
+          {% if tasks %}
+            <span class="chip">{{ tasks|selectattr("done")|list|length }}/{{ tasks|length }} follow-ups done</span>
+          {% endif %}
+          {% if a.get("reminder_days_before") is not none and a.status == "scheduled" %}
+            <span class="chip">Reminder {{ reminder_choices[a.reminder_days_before|string]|lower }}</span>
+          {% endif %}
+        </p>
+      {% endif %}
+    </div>
+  </li>
+{% endmacro %}
 
 {% block content %}
 <div class="page-header">
   <div>
     <h1 class="page-header__title">Appointments</h1>
     <p class="muted">
-      {{ appointments|length }} {{ "appointment" if appointments|length == 1 else "appointments" }} tracked.
+      {{ upcoming|length }} upcoming, {{ past|length }} past.
       Changes here don't change your booking with the clinic.
     </p>
   </div>
   <a class="btn btn--primary page-header__jump" href="#add">Add appointment</a>
 </div>
 
-<div class="split">
-  <section aria-labelledby="list-heading">
-    <h2 id="list-heading" class="visually-hidden">All appointments</h2>
-    {% if appointments %}
-      <ul class="appt-list">
-        {% for a in appointments %}
-          {% set d = a.date|to_date %}
-          <li class="card appt">
-            <div class="appt__date" aria-hidden="true">
-              <span class="appt__month">{{ d.strftime("%b") }}</span>
-              <span class="appt__day">{{ d.day }}</span>
-            </div>
-            <div class="appt__body">
-              <div class="appt__top">
-                <h3 class="appt__title">{{ a.reason }}</h3>
-                <span class="pill pill--{{ a.status }}">{{ a.status|capitalize }}</span>
-              </div>
-              <p class="appt__meta">
-                <time datetime="{{ a.date }}T{{ a.time }}">{{ a.date|fmt_date }} · {{ a.time|fmt_time }}</time>
-              </p>
-              <p class="appt__meta">{{ a.provider }}{% if a.location %} · {{ a.location }}{% endif %}</p>
-              {% if a.notes %}<p class="appt__notes">{{ a.notes }}</p>{% endif %}
-            </div>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <div class="card empty">
-        <h3>No appointments yet</h3>
-        <p class="muted">Add your first appointment with the form.</p>
-      </div>
-    {% endif %}
+{% if due %}
+  <section class="reminders" aria-labelledby="reminders-heading">
+    <h2 id="reminders-heading" class="reminders__title">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      Reminders
+    </h2>
+    <ul class="reminders__list">
+      {% for a in due %}
+        {% set days = (a.date|to_date - today).days %}
+        <li class="reminder">
+          <p>
+            <a href="{{ url_for('appointments.detail', appt_id=a.id) }}"><strong>{{ a.reason }}</strong></a>
+            {{ "today" if days == 0 else "tomorrow" if days == 1 else "in " ~ days ~ " days" }}
+            at {{ a.time|fmt_time }} with {{ a.provider }}
+          </p>
+          <form method="post" action="{{ url_for('appointments.dismiss_reminder', appt_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="list">
+            <button class="btn btn--ghost btn--sm" type="submit">Dismiss<span class="visually-hidden"> reminder for {{ a.reason }}</span></button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
   </section>
+{% endif %}
+
+<div class="split">
+  <div class="stack">
+    <section aria-labelledby="upcoming-heading">
+      <h2 id="upcoming-heading" class="section-title">Upcoming <span class="count">{{ upcoming|length }}</span></h2>
+      {% if upcoming %}
+        <ul class="appt-list">
+          {% for a in upcoming %}{{ card(a) }}{% endfor %}
+        </ul>
+      {% else %}
+        <div class="card empty">
+          <h3>No upcoming appointments</h3>
+          <p class="muted">Add one with the form.</p>
+        </div>
+      {% endif %}
+    </section>
+
+    {% if past %}
+      <section aria-labelledby="past-heading">
+        <h2 id="past-heading" class="section-title">Past <span class="count">{{ past|length }}</span></h2>
+        <ul class="appt-list appt-list--past">
+          {% for a in past %}{{ card(a) }}{% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+  </div>
 
   <section id="add" class="card form-card" aria-labelledby="add-heading">
     <h2 id="add-heading" class="form-card__title">Add appointment</h2>
-
-    {% if errors %}
-      <div class="alert alert--error" role="alert">
-        <p><strong>Please fix {{ "this field" if errors|length == 1 else errors|length ~ " fields" }}:</strong></p>
-        <ul>
-          {% for name, message in errors.items() %}
-            <li><a href="#f-{{ name }}">{{ message }}</a></li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-
     <form method="post" action="{{ url_for('appointments.create') }}" novalidate>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="field-row">
-        {{ field("date", "Date", form, errors, type="date", required=true) }}
-        {{ field("time", "Time", form, errors, type="time", required=true) }}
-      </div>
-      {{ field("reason", "Reason for visit", form, errors, required=true, maxlength=120, placeholder="e.g. Annual physical") }}
-      {{ field("provider", "Provider", form, errors, required=true, maxlength=100, placeholder="e.g. Dr. Lee (fictional)") }}
-      {{ field("location", "Location", form, errors, maxlength=120, placeholder="Clinic or address") }}
-      {{ field("notes", "Notes", form, errors, maxlength=1000, textarea=true, hint="Prep instructions, questions to ask, what to bring.") }}
+      {% include "appointments/_fields.html" %}
       <button class="btn btn--primary btn--block" type="submit">Save appointment</button>
     </form>
   </section>

@@ -24,3 +24,42 @@
     {% if error %}<p class="field__error" id="f-{{ name }}-error">{{ error }}</p>{% endif %}
   </div>
 {% endmacro %}
+
+{# A labelled <select>; choices maps option value -> label. A stored None selects the "" option. #}
+{% macro select_field(name, label, choices, form, errors, required=false, hint=none) %}
+  {% set error = errors.get(name) %}
+  {% set value = form.get(name) %}
+  {% set current = "" if value is none else value|string %}
+  {% set described = [] %}
+  {% if hint %}{% set _ = described.append("f-" ~ name ~ "-hint") %}{% endif %}
+  {% if error %}{% set _ = described.append("f-" ~ name ~ "-error") %}{% endif %}
+  <div class="field{% if error %} field--error{% endif %}">
+    <label class="field__label" for="f-{{ name }}">
+      {{ label }}{% if not required %} <span class="field__optional">optional</span>{% endif %}
+    </label>
+    {% if hint %}<p class="field__hint" id="f-{{ name }}-hint">{{ hint }}</p>{% endif %}
+    <select class="input" id="f-{{ name }}" name="{{ name }}"
+      {%- if error %} aria-invalid="true"{% endif %}
+      {%- if described %} aria-describedby="{{ described|join(' ') }}"{% endif %}
+      {%- if error and (errors|list|first) == name %} autofocus{% endif %}>
+      {% for option, text in choices.items() %}
+        <option value="{{ option }}"{% if option == current %} selected{% endif %}>{{ text }}</option>
+      {% endfor %}
+    </select>
+    {% if error %}<p class="field__error" id="f-{{ name }}-error">{{ error }}</p>{% endif %}
+  </div>
+{% endmacro %}
+
+{# Summary at the top of a form, linking to each invalid field. #}
+{% macro error_summary(errors) %}
+  {% if errors %}
+    <div class="alert alert--error" role="alert">
+      <p><strong>Please fix {{ "this field" if errors|length == 1 else errors|length ~ " fields" }}:</strong></p>
+      <ul>
+        {% for name, message in errors.items() %}
+          <li><a href="#f-{{ name }}">{{ message }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+{% endmacro %}
