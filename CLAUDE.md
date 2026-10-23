@@ -4,13 +4,13 @@ A personal healthcare navigation web app for a local demo. Primary feature: AI-p
 
 ## Hard constraints (ask before breaking any of these)
 
-- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS, JSON files. AI: the Anthropic Claude API through the official `anthropic` SDK, called only from Python.
+- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS, JSON files. AI: one provider for bill analysis (being chosen; open-source preferred), called only from Python in `medflow/bill_ai.py`.
 - No React, Next.js, Tailwind, build step, SQL/NoSQL database, ORM, LangChain, agent frameworks, vector databases, or microservices.
-- No new dependency (pip or CDN) without explicit approval. Runtime: Flask, anthropic. Dev: pytest. No `python-dotenv`: set env vars in the shell.
+- No new dependency (pip or CDN) without explicit approval. Runtime: Flask (plus the AI provider's SDK once approved). Dev: pytest. No `python-dotenv`: set env vars in the shell.
 - No plugins, MCP servers, background services, or external skills unless approved.
 - **All patient-side data is fictional**: bills, appointments, expenses, tests, screenshots. No real patient names, addresses, phone numbers, insurance IDs or bills. Never upload a real bill, even locally.
 - **The one exception is price reference data**: real published prices from hospitals' public price-transparency sources, copied by hand, each with `source_url`, `as_of`, `retrieved_on` and `real: true`. No scraping or live price APIs.
-- `ANTHROPIC_API_KEY` lives only in the environment: never in Git, templates, logs, error pages or browser JavaScript.
+- AI API keys live only in the environment: never in Git, templates, logs, error pages or browser JavaScript.
 - The AI extracts and explains; Python validates and does all money math. Nothing AI-extracted is saved without the user's review and approval.
 - No clinical advice. Never present a listed price as a guaranteed bill or a guaranteed coverage amount. Label AI explanations as AI-generated general information.
 - The demo runs locally on 127.0.0.1. Nothing is deployed.
@@ -83,7 +83,6 @@ Rules:
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
-set ANTHROPIC_API_KEY=...               # only needed for bill analysis
 flask --app medflow run --debug          # http://127.0.0.1:5000
 flask --app medflow reset-demo           # REPLACES instance/ data with data/seed/ (asks first; --yes skips)
 pytest
