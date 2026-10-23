@@ -1,9 +1,9 @@
 # Handoff
 
-_Last updated: 2026-10-21. **Day 3 complete. Plan revised and approved (2026-10-21); Day 4 is now bill analysis.**_
+_Last updated: 2026-10-23. **Day 4 (bill analysis, part 1) done except the real AI provider, which waits for approval.**_
 
 ## Goal
-Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: Day 4 (bill analysis, part 1, B1–B3).
+Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: approve an AI provider, wire it into `bill_ai.call_model()`, then Day 5 (B4–B6).
 
 ## Plan revision (2026-10-21)
 - AI bill understanding is now the primary feature (Days 4–5), using the Anthropic `anthropic` SDK. No `python-dotenv`; set `ANTHROPIC_API_KEY` in the shell.
@@ -12,9 +12,22 @@ Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: Day 4 (bill 
 - Project structure unchanged. See `docs/PLAN.md` "Approved decisions" 6–7 and the bill analysis spec.
 
 ## Current state
-- Days 1–3 and the audit fixes are committed locally. Nothing is pushed.
-- `pytest`: 210/210 pass (86 appointments, 22 audit, 100 expenses, plus storage).
-- Checked in the browser at 1280px and 375px: expense list and summary, edit, delete confirmation, add-from-appointment prefill, appointment page with linked expenses, appointment delete confirmation. No page-level horizontal scroll (the category table scrolls inside its own box); all controls ≥ 44px.
+- Days 1–4 committed locally. Nothing is pushed.
+- `pytest`: 269/269 pass (59 new in `tests/test_bills.py`).
+- **No AI provider is wired in.** `bill_ai.call_model()` raises "AI analysis isn't configured" (HTTP 503). Everything around it is built and tested with a fake.
+- Checked in the browser at 1280px and 375px using a throwaway launcher (in the session scratchpad, not the repo) that fakes the AI answer: upload page, review page with a flagged item, no horizontal scroll.
+
+## Day 4 features
+- `medflow/bill_ai.py`: the only module that talks to an AI provider. `PROMPT` (bill text is data, not instructions; copy amounts exactly), `ANSWER_SCHEMA` (all strings), `call_model()` (provider stub), `extract()` (JSON parse → `AIError` on failure).
+- `medflow/bills.py`: `/bills/` upload → file check by leading bytes + extension (PDF/PNG/JPEG) → `extract` → `check_answer` → read-only review page. Saves nothing.
+- `check_answer`: rejects wrongly shaped answers; `null` optional fields mean "not shown"; amounts through `expenses.parse_money`, dates through `dates.check_date`; unreadable or negative amounts (`-$50`, `($50)`) are flagged, never guessed; items total only when every amount parsed; compares with the bill's printed total; flags an unreadable total. Text trimmed; max 100 items.
+- Uploads stay in memory: `MemoryUploadRequest` in `__init__.py` overrides Werkzeug's `_get_file_stream` so no upload spills to a temp file. `MAX_CONTENT_LENGTH` = 5 MB with a friendly 413 page.
+- `data/sample_bills/`: 3 fictional PDFs, including `03_prompt_injection_test.pdf` for the Day 5 security review. `.gitattributes` marks PDFs binary (line-ending conversion would corrupt them).
+
+## Known limitations (Day 4)
+- The 413 message mentions a file even on other forms (only reachable with 5 MB+ text).
+- The upload field is written by hand; the `field` macro doesn't support file inputs.
+- Adjustments and payments on a bill are flagged, not handled.
 
 ## Day 3 features
 - **Money:** `expenses.parse_money()` reads input with `Decimal` behind an ASCII-only regex (`120`, `120.5`, `$1,234.56`); rejects negatives, more than 2 decimals, `NaN`/`Infinity`/`1e3`, misplaced commas (`1,23`), non-ASCII digits, and anything over $1,000,000. Stored as integer cents and displayed by the `money` filter using integer math only.
@@ -48,10 +61,7 @@ Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: Day 4 (bill 
 - Locking `load`/`save` separately doesn't stop lost updates; use `storage.modify`.
 - A server started without `--debug` caches templates; restart it after template edits when checking in a browser.
 
-## Next steps: Day 4
-Follow "Bill analysis specification (Days 4–5)" in `docs/PLAN.md`:
-1. Add `anthropic` to `requirements.txt` and install it.
-2. Write 2–3 fictional sample bills in `data/sample_bills/`.
-3. Tests first (`tests/test_bills.py`, AI faked): upload checks, response shape checks, per-item `parse_money`, flagged items, error cases.
-4. `medflow/bills.py` + `templates/bills/`: upload form, AI call, read-only review page; nav link.
-5. Browser check at 375px and 1280px (with a real key, sample bills only); `pytest`; `/code-review`; commit.
+## Next steps
+1. User picks the AI provider/model (see the recommendation in the session). Add its SDK to `requirements.txt` only after approval.
+2. Implement `bill_ai.call_model()` for it; try the 3 sample bills by hand; keep tests on the fake.
+3. Day 5: editable review → approve → save to expenses with `source: "bill"` (B4–B6), then `/security-review`.

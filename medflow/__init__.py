@@ -1,22 +1,35 @@
+import io
 import os
 import secrets
 from datetime import datetime
 
 import click
-from flask import Flask, abort, redirect, render_template, request, session, url_for
-from werkzeug.exceptions import InternalServerError
+from flask import Flask, Request, abort, redirect, render_template, request, session, url_for
+from werkzeug.exceptions import InternalServerError, RequestEntityTooLarge
 
 from . import storage
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
+class MemoryUploadRequest(Request):
+    # Werkzeug writes uploads over 500 KB to a temporary file. Uploaded bills must never
+    # touch disk, so every upload goes to memory; MAX_CONTENT_LENGTH caps its size.
+    def _get_file_stream(self, total_content_length, content_type, filename=None, content_length=None):
+        return io.BytesIO()
+
+
 def create_app(test_config=None):
+    # Imported here because the feature modules import this package (e.g. the money filter).
+    from . import appointments, bills, expenses
+
     app = Flask(__name__, instance_relative_config=True)
+    app.request_class = MemoryUploadRequest
     app.config.from_mapping(
         # The fallback only exists so a local demo starts without setup.
         SECRET_KEY=os.environ.get("MEDFLOW_SECRET_KEY", "dev-only-not-a-secret"),
         SESSION_COOKIE_SAMESITE="Lax",
+        MAX_CONTENT_LENGTH=bills.MAX_UPLOAD_BYTES,
         DATA_DIR=app.instance_path,
         SEED_DIR=os.path.join(os.path.dirname(app.root_path), "data", "seed"),
     )
@@ -52,6 +65,11 @@ def create_app(test_config=None):
     def http_error(e):
         return render_template("error.html", error=e), e.code
 
+    @app.errorhandler(413)
+    def too_large(e):
+        e = RequestEntityTooLarge(description="That file is larger than 5 MB. Upload a smaller copy of the bill.")
+        return render_template("error.html", error=e), 413
+
     # Only used without --debug; in debug mode Flask shows its debugger instead.
     # The exception itself is already in the server log; the page never shows it.
     @app.errorhandler(500)
@@ -66,9 +84,9 @@ def create_app(test_config=None):
             message = "Something went wrong on our side. Try again; if it keeps happening, check the terminal running MedFlow."
         return render_template("error.html", error=InternalServerError(description=message)), 500
 
-    from . import appointments, expenses
     app.register_blueprint(appointments.bp)
     app.register_blueprint(expenses.bp)
+    app.register_blueprint(bills.bp)
 
     @app.get("/")
     def index():

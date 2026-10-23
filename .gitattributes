@@ -1,0 +1,5 @@
+# Sample bills are binary; line-ending conversion would corrupt them.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary

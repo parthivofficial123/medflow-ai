@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Review bill{% endblock %}
+
+{% block content %}
+<a class="back-link" href="{{ url_for('bills.upload_form') }}">&larr; Upload another bill</a>
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">Review this bill</h1>
+    <p class="muted">
+      {% if bill.provider %}{{ bill.provider }}{% else %}Provider not found{% endif %}
+      {%- if bill.bill_date %} · Bill dated {{ bill.bill_date|fmt_date }}{% endif %}
+      · {{ bill["items"]|length }} {{ "charge" if bill["items"]|length == 1 else "charges" }}
+    </p>
+  </div>
+</div>
+
+<p class="alert alert--warning">Nothing has been saved. Check every charge against your bill. AI can misread amounts or dates.</p>
+
+<section class="card panel" aria-labelledby="totals-heading">
+  <h2 id="totals-heading" class="panel__title">Totals</h2>
+  {% if bill.problem_count %}
+    <p class="bill-check bill-check--problem">{{ bill.problem_count }} {{ "item needs" if bill.problem_count == 1 else "items need" }} checking: some details couldn't be read. They're marked below.</p>
+  {% endif %}
+  {% if bill.total_raw and bill.total_cents is none %}
+    <p class="bill-check bill-check--problem">Couldn't read the bill's total ({{ bill.total_raw }}). Check it on your bill.</p>
+  {% endif %}
+  {% if bill.total_matches %}
+    <p class="bill-check bill-check--ok">The charges add up to the bill's total of {{ bill.total_cents|money }}.</p>
+  {% elif bill.total_matches is false %}
+    <p class="bill-check bill-check--problem">The charges ({{ bill.items_total_cents|money }}) don't add up to the bill's total ({{ bill.total_cents|money }}). A charge may be missing or misread.</p>
+  {% elif bill.items_total_cents is not none %}
+    <p class="bill-check">The charges add up to {{ bill.items_total_cents|money }}.{% if not bill.total_raw %} No total was found on the bill to compare.{% endif %}</p>
+  {% else %}
+    <p class="bill-check">No total is shown until every amount has been read.</p>
+  {% endif %}
+  <p class="field__hint">Totals are calculated by MedFlow from the amounts below, not by the AI.</p>
+</section>
+
+<section class="stack bill-items" aria-labelledby="items-heading">
+  <h2 id="items-heading" class="section-title">Charges</h2>
+  <ol class="bill-list">
+    {% for item in bill["items"] %}
+      <li class="card bill-item{% if item.problems %} bill-item--problem{% endif %}">
+        <div class="bill-item__top">
+          <h3 class="bill-item__title">{{ item.description or "No description" }}</h3>
+          <p class="bill-item__amount">{{ item.amount_cents|money if item.amount_cents is not none else item.amount_raw or "—" }}</p>
+        </div>
+        <p class="bill-item__meta">
+          {% if item.service_date %}Date of service: {{ item.service_date|fmt_date }}{% else %}Date of service: {{ item.service_date_raw or "not shown" }}{% endif %}
+        </p>
+        {% if item.problems %}
+          <ul class="bill-item__problems">
+            {% for problem in item.problems %}<li>{{ problem }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+        {% if item.explanation %}
+          <div class="bill-item__explain">
+            <p class="bill-item__label">AI-generated explanation</p>
+            <p>{{ item.explanation }}</p>
+          </div>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+  <p class="field__hint">AI-generated explanations are general information, not medical or financial advice. Check them against your bill.</p>
+</section>
+{% endblock %}
