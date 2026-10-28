@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+
+{% block content %}
+<section class="card panel signin" aria-labelledby="signin-heading">
+  <h1 id="signin-heading" class="detail__title">Sign in to MedFlow AI</h1>
+  <p>Your appointments and expenses are private to your account.</p>
+  <p class="alert alert--warning">This is a demo for <strong>fictional data only</strong>. Don't enter real medical, billing or personal information.</p>
+  <form class="actions" method="post" action="{{ url_for('auth.start') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn--primary" type="submit">Continue with Google</button>
+  </form>
+</section>
+{% endblock %}

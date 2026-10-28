@@ -5,7 +5,8 @@ from datetime import date
 
 import pytest
 
-from medflow import create_app, dates
+from medflow import auth, create_app, dates, storage
+from tests.fake_supabase import FakeSupabase
 
 # Every test runs "on" this date, so upcoming/past, reminders and "this month" are stable.
 TODAY = date(2026, 10, 20)
@@ -19,7 +20,10 @@ def pin_today(monkeypatch):
 @pytest.fixture(autouse=True)
 def no_network_or_ai_key(monkeypatch):
     # Tests never call a real AI service, even if a developer has GEMINI_API_KEY set.
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    # The same for a developer's Supabase or Vercel settings: tests choose their own.
+    for name in ("GEMINI_API_KEY", "MEDFLOW_STORAGE", "MEDFLOW_SECRET_KEY", "SUPABASE_URL",
+                 "SUPABASE_PUBLISHABLE_KEY", "VERCEL"):
+        monkeypatch.delenv(name, raising=False)
 
     def refuse(*args, **kwargs):
         raise AssertionError("A test tried to use the network.")
@@ -46,6 +50,42 @@ def client(app):
 def live_app(data_dir):
     # Without TESTING, Flask uses our 500 handler instead of raising, like a real run.
     return create_app({"SECRET_KEY": "test-secret", "DATA_DIR": str(data_dir)})
+
+
+SUPABASE_CONFIG = {
+    "TESTING": True,
+    "SECRET_KEY": "test-secret",
+    "STORAGE": "supabase",
+    "SUPABASE_URL": "https://demo-ref.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test",
+}
+
+
+@pytest.fixture
+def fake_db(monkeypatch):
+    db = FakeSupabase()
+    monkeypatch.setattr(storage, "create_client", db.create_client)
+    monkeypatch.setattr(auth, "create_client", db.create_client)
+    return db
+
+
+@pytest.fixture
+def sb_app(fake_db, data_dir):
+    # DATA_DIR is set so tests can check that Supabase mode never writes JSON files there.
+    return create_app({**SUPABASE_CONFIG, "DATA_DIR": str(data_dir)})
+
+
+def sign_in(app, db, email="a@example.test"):
+    """A test client signed in as a new user through the real login and callback routes."""
+    user_id, _ = db.add_user(email)
+    client = app.test_client()
+    client.post("/login", data={"csrf_token": get_csrf_token(client, "/login")})
+    with client.session_transaction() as s:
+        verifier = s["pkce_verifier"]
+    db.codes[f"code-{user_id}"] = (verifier, user_id, email)
+    client.get(f"/auth/callback?code=code-{user_id}")
+    client.user_id = user_id
+    return client
 
 
 def get_csrf_token(client, path="/appointments/"):

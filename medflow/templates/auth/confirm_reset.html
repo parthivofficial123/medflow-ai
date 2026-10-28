@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Reset demo data{% endblock %}
+
+{% block content %}
+<section class="card panel confirm" aria-labelledby="confirm-heading">
+  <h1 id="confirm-heading" class="detail__title">Reset your demo data?</h1>
+  <p>This <strong>replaces all your appointments, tasks and expenses</strong>, including expenses saved from bills, with the fictional demo data. It can't be undone.</p>
+  <form class="actions" method="post" action="{{ url_for('auth.reset') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="confirmed" value="yes">
+    <button class="btn btn--danger" type="submit">Replace my data</button>
+    <a class="btn btn--secondary" href="{{ url_for('index') }}">Keep my data</a>
+  </form>
+</section>
+{% endblock %}

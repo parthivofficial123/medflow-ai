@@ -1,8 +1,10 @@
 import json
 
 import pytest
+from flask import g
 
 from medflow import storage
+from tests.conftest import sign_in
 
 
 @pytest.fixture(autouse=True)
@@ -88,3 +90,46 @@ def test_reset_restores_seed(app):
     storage.reset()
     with open(f"{app.config['SEED_DIR']}/appointments.json", encoding="utf-8") as f:
         assert storage.load("appointments") == json.load(f)
+
+
+def test_changes_lists_new_changed_and_deleted_records():
+    before = [{"id": 1, "a": 1}, {"id": 2, "a": 2}, {"id": 3, "a": 3}]
+    after = [{"id": 1, "a": 1}, {"id": 2, "a": 20, "b": None}, {"id": 4, "a": 4}]
+    assert storage.changes(before, after) == ([{"id": 4, "a": 4}], {2: {"a": 20, "b": None}}, [3])
+
+
+def test_changes_compares_nested_values():
+    before = [{"id": 1, "tasks": [{"id": 1, "done": False}]}]
+    after = [{"id": 1, "tasks": [{"id": 1, "done": True}]}]
+    assert storage.changes(before, after)[1] == {1: {"tasks": [{"id": 1, "done": True}]}}
+
+
+def test_changes_refuses_duplicate_ids():
+    with pytest.raises(ValueError):
+        storage.changes([], [{"id": 1}, {"id": 1}])
+
+
+def test_supabase_load_hides_user_id(sb_app, fake_db):
+    sign_in(sb_app, fake_db)
+    with sb_app.test_request_context():
+        g.access_token = next(iter(fake_db.tokens))
+        records = storage.load("appointments")
+    assert records and all("user_id" not in r for r in records)
+
+
+def test_supabase_modify_saves_nothing_if_the_block_fails(sb_app, fake_db):
+    sign_in(sb_app, fake_db)
+    fake_db.requests.clear()
+    with sb_app.test_request_context():
+        g.access_token = next(iter(fake_db.tokens))
+        with pytest.raises(RuntimeError):
+            with storage.modify("appointments") as records:
+                records.clear()
+                raise RuntimeError("stop")
+    assert fake_db.requests == [("appointments", "select")]
+
+
+def test_supabase_storage_needs_a_signed_in_user(sb_app):
+    with sb_app.test_request_context():
+        with pytest.raises(RuntimeError, match="signed-in"):
+            storage.load("appointments")

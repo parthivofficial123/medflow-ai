@@ -6,7 +6,8 @@ from . import bill_ai, dates, expenses, storage
 
 bp = Blueprint("bills", __name__, url_prefix="/bills")
 
-MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+# Vercel rejects request bodies over 4.5 MB.
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 MAX_ITEMS = 100
 # The file's first bytes decide its type; the name only has to agree with them.
 FILE_TYPES = {

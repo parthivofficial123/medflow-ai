@@ -13,6 +13,8 @@ import os
 import sys
 from difflib import SequenceMatcher
 
+from dotenv import load_dotenv
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from medflow import bill_ai, bills  # noqa: E402
@@ -55,6 +57,7 @@ def score(expected, bill):
 
 
 def main():
+    load_dotenv()  # GEMINI_API_KEY from .env; nothing is printed
     if not os.environ.get("GEMINI_API_KEY"):
         sys.exit("GEMINI_API_KEY isn't set in this environment.")
     with open(os.path.join(BILLS_DIR, "expected.json"), encoding="utf-8") as f:

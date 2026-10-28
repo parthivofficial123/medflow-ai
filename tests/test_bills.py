@@ -119,9 +119,9 @@ def test_accepted_files_reach_the_ai_unchanged(client, fake_ai, content, filenam
 
 def test_file_over_5_mb_is_rejected_before_the_ai(client, fake_ai):
     calls = fake_ai(GOOD_ANSWER)
-    response = upload(client, content=PDF + b"0" * (5 * 1024 * 1024))
+    response = upload(client, content=PDF + b"0" * (4 * 1024 * 1024))
     assert response.status_code == 413
-    assert "larger than 5 MB" in response.get_data(as_text=True)
+    assert "larger than 4 MB" in response.get_data(as_text=True)
     assert calls == []
 
 

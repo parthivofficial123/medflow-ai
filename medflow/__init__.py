@@ -1,15 +1,20 @@
 import io
+import logging
 import os
 import secrets
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import click
 from flask import Flask, Request, abort, redirect, render_template, request, session, url_for
-from werkzeug.exceptions import InternalServerError, RequestEntityTooLarge
+from werkzeug.exceptions import InternalServerError, RequestEntityTooLarge, ServiceUnavailable
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import storage
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+DEV_SECRET = "dev-only-not-a-secret"
+log = logging.getLogger(__name__)
 
 
 class MemoryUploadRequest(Request):
@@ -21,24 +26,35 @@ class MemoryUploadRequest(Request):
 
 def create_app(test_config=None):
     # Imported here because the feature modules import this package (e.g. the money filter).
-    from . import appointments, bills, expenses
+    from . import appointments, auth, bills, expenses
 
-    app = Flask(__name__, instance_relative_config=True)
+    # Static files live in public/ because Vercel serves that folder itself.
+    app = Flask(__name__, instance_relative_config=True, static_folder="../public/static")
     app.request_class = MemoryUploadRequest
     app.config.from_mapping(
         # The fallback only exists so a local demo starts without setup.
-        SECRET_KEY=os.environ.get("MEDFLOW_SECRET_KEY", "dev-only-not-a-secret"),
+        SECRET_KEY=os.environ.get("MEDFLOW_SECRET_KEY", DEV_SECRET),
         SESSION_COOKIE_SAMESITE="Lax",
         MAX_CONTENT_LENGTH=bills.MAX_UPLOAD_BYTES,
         DATA_DIR=app.instance_path,
         SEED_DIR=os.path.join(os.path.dirname(app.root_path), "data", "seed"),
+        STORAGE=os.environ.get("MEDFLOW_STORAGE", "json"),
+        SUPABASE_URL=os.environ.get("SUPABASE_URL", ""),
+        SUPABASE_PUBLISHABLE_KEY=os.environ.get("SUPABASE_PUBLISHABLE_KEY", ""),
+        ON_VERCEL=os.environ.get("VERCEL") == "1",
     )
     if test_config:
         app.config.update(test_config)
+    check_config(app.config)
 
-    os.makedirs(app.config["DATA_DIR"], exist_ok=True)
-    with app.app_context():
-        storage.seed_missing()
+    if app.config["ON_VERCEL"]:
+        # Vercel's proxy terminates HTTPS; trust its headers so sign-in redirects use https.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+        app.config["SESSION_COOKIE_SECURE"] = True
+    if app.config["STORAGE"] == "json":
+        os.makedirs(app.config["DATA_DIR"], exist_ok=True)
+        with app.app_context():
+            storage.seed_missing()
 
     @app.before_request
     def check_csrf():
@@ -52,7 +68,8 @@ def create_app(test_config=None):
 
     @app.context_processor
     def inject_csrf_token():
-        return {"csrf_token": csrf_token}
+        signed_in = app.config["STORAGE"] == "json" or bool(session.get("access_token"))
+        return {"csrf_token": csrf_token, "signed_in": signed_in}
 
     app.add_template_filter(to_date)
     app.add_template_filter(fmt_date)
@@ -67,8 +84,15 @@ def create_app(test_config=None):
 
     @app.errorhandler(413)
     def too_large(e):
-        e = RequestEntityTooLarge(description="That file is larger than 5 MB. Upload a smaller copy of the bill.")
+        e = RequestEntityTooLarge(description="That file is larger than 4 MB. Upload a smaller copy of the bill.")
         return render_template("error.html", error=e), 413
+
+    @app.errorhandler(storage.DatabaseError)
+    def database_error(e):
+        log.error("Database request failed: %s", e)
+        message = ("MedFlow couldn't reach its database, so your last change may not have been "
+                   "saved. Reload the page to check, then try again.")
+        return render_template("error.html", error=ServiceUnavailable(description=message)), 503
 
     # Only used without --debug; in debug mode Flask shows its debugger instead.
     # The exception itself is already in the server log; the page never shows it.
@@ -84,6 +108,7 @@ def create_app(test_config=None):
             message = "Something went wrong on our side. Try again; if it keeps happening, check the terminal running MedFlow."
         return render_template("error.html", error=InternalServerError(description=message)), 500
 
+    app.register_blueprint(auth.bp)
     app.register_blueprint(appointments.bp)
     app.register_blueprint(expenses.bp)
     app.register_blueprint(bills.bp)
@@ -99,10 +124,36 @@ def create_app(test_config=None):
     )
     def reset_demo():
         """Replace all user data with the fictional demo data in data/seed/."""
+        if app.config["STORAGE"] != "json":
+            raise click.ClickException("With Supabase, each user resets their own data from "
+                                       "the 'Reset my demo data' link in the app.")
         storage.reset()
         click.echo(f"Demo data restored in {app.config['DATA_DIR']}")
 
     return app
+
+
+def check_config(config):
+    """Refuse to start with a missing or unsafe setting. Messages never include values."""
+    if config["STORAGE"] not in ("json", "supabase"):
+        raise RuntimeError("MEDFLOW_STORAGE must be 'json' or 'supabase'.")
+    if config["ON_VERCEL"] and config["STORAGE"] != "supabase":
+        raise RuntimeError("On Vercel, MEDFLOW_STORAGE must be 'supabase'; there is no JSON fallback.")
+    if config["STORAGE"] != "supabase":
+        return
+    url = urlsplit(config["SUPABASE_URL"])
+    if url.scheme not in ("http", "https") or not url.netloc:
+        raise RuntimeError("SUPABASE_URL must be your project URL, like https://<ref>.supabase.co")
+    # Only the origin: a pasted ".../rest/v1/" would otherwise break every request.
+    config["SUPABASE_URL"] = f"{url.scheme}://{url.netloc}"
+    key = config["SUPABASE_PUBLISHABLE_KEY"]
+    if not key:
+        raise RuntimeError("SUPABASE_PUBLISHABLE_KEY isn't set.")
+    if key.startswith("sb_secret_"):
+        raise RuntimeError("SUPABASE_PUBLISHABLE_KEY holds a secret key. MedFlow only uses the "
+                           "publishable key; keep the secret key out of the app.")
+    if config["SECRET_KEY"] in ("", DEV_SECRET):
+        raise RuntimeError("Set MEDFLOW_SECRET_KEY: sign-in sessions need a real secret.")
 
 
 def csrf_token():

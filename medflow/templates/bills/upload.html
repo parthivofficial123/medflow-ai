@@ -17,7 +17,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field{% if error %} field--error{% endif %}">
       <label class="field__label" for="f-bill">Bill file</label>
-      <p class="field__hint" id="f-bill-hint">PDF, PNG or JPEG, up to 5 MB. The file is read once and never stored.</p>
+      <p class="field__hint" id="f-bill-hint">PDF, PNG or JPEG, up to 4 MB. The file is read once and never stored.</p>
       <input class="input input--file" id="f-bill" name="bill" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" required
         aria-describedby="f-bill-hint{% if error %} f-bill-error{% endif %}"{% if error %} aria-invalid="true"{% endif %}>
     </div>

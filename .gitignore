@@ -23,3 +23,6 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+
+# Vercel CLI link (created by "vercel link"; holds project ids)
+.vercel/

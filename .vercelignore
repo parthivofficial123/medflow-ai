@@ -1,0 +1,10 @@
+.env
+.env.*
+.venv/
+instance/
+tests/
+scripts/
+docs/
+supabase/
+data/sample_bills/
+*.docx
