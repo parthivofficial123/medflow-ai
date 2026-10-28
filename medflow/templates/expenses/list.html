@@ -95,6 +95,7 @@
               <span class="pill pill--{{ st }}">{{ status_labels[st] }}</span>
             </div>
             <p class="appt__meta">{{ e.date|fmt_date }} · {{ categories[e.category] }} · {{ e.provider }}</p>
+            {% if e.source == "bill" %}<p class="chips"><span class="chip">From a bill</span></p>{% endif %}
             <dl class="amounts">
               <div><dt>Estimated</dt><dd>{{ e.estimated_cents|money }}</dd></div>
               <div><dt>Billed</dt><dd>{% if e.actual_cents is none %}Not billed yet{% else %}{{ e.actual_cents|money }}{% endif %}</dd></div>

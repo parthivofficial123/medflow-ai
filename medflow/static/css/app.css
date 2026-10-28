@@ -348,7 +348,12 @@ a { color: var(--color-primary); }
 .bill-item { padding: var(--space-4); display: grid; gap: var(--space-2); }
 .bill-item--problem { border-color: var(--color-warning); border-width: 2px; }
 .bill-item__top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
-.bill-item__title { font-size: var(--text-md); min-width: 0; overflow-wrap: anywhere; }
+.bill-item__title { flex: 1; font-weight: 600; min-width: 0; overflow-wrap: anywhere; cursor: pointer; }
+.bill-item__check { width: 1.5rem; height: 1.5rem; margin: 0.6rem; flex: none; accent-color: var(--color-primary); cursor: pointer; }
+.bill-item__top { align-items: center; }
+.bill-item .field-row .field, .bill-item > .field { margin-bottom: 0; }
+.bill-provider { margin-top: var(--space-5); }
+.bill-provider .field { margin-bottom: 0; }
 .bill-item__amount { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; max-width: 50%; overflow-wrap: anywhere; text-align: right; }
 .bill-item__meta { font-size: var(--text-sm); color: var(--color-muted); overflow-wrap: anywhere; }
 .bill-item__problems { margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); color: var(--color-warning); font-weight: 600; }

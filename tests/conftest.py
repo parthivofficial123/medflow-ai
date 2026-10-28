@@ -1,5 +1,6 @@
 import re
 import threading
+import urllib.request
 from datetime import date
 
 import pytest
@@ -13,6 +14,16 @@ TODAY = date(2026, 10, 20)
 @pytest.fixture(autouse=True)
 def pin_today(monkeypatch):
     monkeypatch.setattr(dates, "today", lambda: TODAY)
+
+
+@pytest.fixture(autouse=True)
+def no_network_or_ai_key(monkeypatch):
+    # Tests never call a real AI service, even if a developer has GEMINI_API_KEY set.
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("A test tried to use the network.")
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
 
 
 @pytest.fixture

@@ -4,9 +4,9 @@ A personal healthcare navigation web app for a local demo. Primary feature: AI-p
 
 ## Hard constraints (ask before breaking any of these)
 
-- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS, JSON files. AI: one provider for bill analysis (being chosen; open-source preferred), called only from Python in `medflow/bill_ai.py`.
+- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS, JSON files. AI: Google Gemini API free tier (`gemini-3.8-flash`) for bill analysis, called with Python's standard library only from `medflow/bill_ai.py`. Free-tier inputs may be reviewed by Google and used to improve its products, so only fictional bills are ever sent.
 - No React, Next.js, Tailwind, build step, SQL/NoSQL database, ORM, LangChain, agent frameworks, vector databases, or microservices.
-- No new dependency (pip or CDN) without explicit approval. Runtime: Flask (plus the AI provider's SDK once approved). Dev: pytest. No `python-dotenv`: set env vars in the shell.
+- No new dependency (pip or CDN) without explicit approval. Runtime: Flask. Dev: pytest. No `python-dotenv`: set env vars in the shell.
 - No plugins, MCP servers, background services, or external skills unless approved.
 - **All patient-side data is fictional**: bills, appointments, expenses, tests, screenshots. No real patient names, addresses, phone numbers, insurance IDs or bills. Never upload a real bill, even locally.
 - **The one exception is price reference data**: real published prices from hospitals' public price-transparency sources, copied by hand, each with `source_url`, `as_of`, `retrieved_on` and `real: true`. No scraping or live price APIs.
@@ -26,6 +26,7 @@ medflow/static/         css/app.css, js/app.js
 data/                   committed data: real price reference files, fictional demo seed, fictional sample_bills/
 instance/               runtime user data (gitignored), copied from data/seed/ on first run
 tests/                  pytest, one file per module
+scripts/                hand-run tools (benchmark_bills.py makes real API calls; never run by pytest)
 ```
 
 Rules:

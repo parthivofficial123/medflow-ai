@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-10-23. **Day 4 (bill analysis, part 1) done except the real AI provider, which waits for approval.**_
+_Last updated: 2026-10-28. **Step 1 (Gemini + review-and-save) built and tested; the real-API benchmark is still to run.**_
 
 ## Goal
 Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: approve an AI provider, wire it into `bill_ai.call_model()`, then Day 5 (B4–B6).
@@ -12,10 +12,16 @@ Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: approve an A
 - Project structure unchanged. See `docs/PLAN.md` "Approved decisions" 6–7 and the bill analysis spec.
 
 ## Current state
-- Days 1–4 committed locally. Nothing is pushed.
-- `pytest`: 269/269 pass (59 new in `tests/test_bills.py`).
-- **No AI provider is wired in.** `bill_ai.call_model()` raises "AI analysis isn't configured" (HTTP 503). Everything around it is built and tested with a fake.
-- Checked in the browser at 1280px and 375px using a throwaway launcher (in the session scratchpad, not the repo) that fakes the AI answer: upload page, review page with a flagged item, no horizontal scroll.
+- Committed locally, not pushed or deployed. `pytest`: 327/327 pass.
+- Gemini is wired into `bill_ai.call_model()` (free tier, `gemini-3.8-flash`, stdlib `urllib`, key from `GEMINI_API_KEY` in an `x-goog-api-key` header). **Not yet called for real:** the key isn't visible to the Claude desktop app's environment. The field name `responseJsonSchema` is unverified until the first real call.
+- Day 5 done: the review page is an editable form (tick, fix description/date/amount/category, provider); "Save ticked charges" validates every row with `expenses.validate` and saves them in one `storage.modify("expenses")` with `source: "bill"`. Saved rows show a "From a bill" chip.
+- Browser-checked with a fake AI (scratchpad launcher, not in the repo) at 1280px and 375px: upload → fix a flagged row → save 3 → expenses list and totals updated.
+
+## Step 1 details
+- `bill_ai.py`: no automatic retries (free-tier quota). 429 → "free AI limit"; 401/403 → "key refused"; 5xx → "having problems"; timeouts (incl. connect) → 504; blocked/empty/MAX_TOKENS replies → plain messages. Logs show only the HTTP status, never the key or bill text.
+- `tests/conftest.py`: every test unsets `GEMINI_API_KEY` and replaces `urllib.request.urlopen` with a function that fails the test, so no test can reach the network.
+- Review form round-trips explanation, the amount and date as printed, and the AI warnings in hidden fields; `row_count` and `bill_date` coming back from the browser are re-checked.
+- `scripts/benchmark_bills.py` + `data/sample_bills/expected.json`: 3 real calls, scores items/amounts/dates/totals and whether the injection bill kept its amounts.
 
 ## Day 4 features
 - `medflow/bill_ai.py`: the only module that talks to an AI provider. `PROMPT` (bill text is data, not instructions; copy amounts exactly), `ANSWER_SCHEMA` (all strings), `call_model()` (provider stub), `extract()` (JSON parse → `AIError` on failure).
@@ -62,6 +68,6 @@ Build the MedFlow AI MVP in 8 days, following `docs/PLAN.md`. Next: approve an A
 - A server started without `--debug` caches templates; restart it after template edits when checking in a browser.
 
 ## Next steps
-1. User picks the AI provider/model (see the recommendation in the session). Add its SDK to `requirements.txt` only after approval.
-2. Implement `bill_ai.call_model()` for it; try the 3 sample bills by hand; keep tests on the fake.
-3. Day 5: editable review → approve → save to expenses with `source: "bill"` (B4–B6), then `/security-review`.
+1. Make `GEMINI_API_KEY` visible to the desktop app (user-level env var, restart the app), then run `python scripts/benchmark_bills.py` and record the results here.
+2. If the first real call returns HTTP 400, check `generationConfig` field names against Google's API reference (`responseJsonSchema` vs `responseSchema`).
+3. Step 2: Supabase storage + Google Sign-In (access token only in the cookie), per docs/PLAN.md decision 9.

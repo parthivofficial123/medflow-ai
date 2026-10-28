@@ -1,11 +1,12 @@
 import html as html_lib
 import io
 import json
+import re
 
 import pytest
 from flask import request
 
-from medflow import bill_ai, bills
+from medflow import bill_ai, bills, expenses
 from tests.conftest import get_csrf_token
 
 PDF = b"%PDF-1.4\n% fictional test bill\n"
@@ -242,14 +243,15 @@ def test_too_many_items_is_rejected():
         bills.check_answer({"items": [item()] * (bills.MAX_ITEMS + 1)})
 
 
-# Review page (B1, read-only on Day 4)
+# Review page (B1, B4)
 def test_review_page_shows_items_explanations_and_ai_label(client, fake_ai):
     fake_ai(GOOD_ANSWER)
     html = upload(client).get_data(as_text=True)
     assert "Lakeside Imaging (fictional)" in html
     assert "MRI knee without contrast" in html
     assert "A scan of the knee using magnets." in html
-    assert "$1,200.00" in html and "$65.00" in html
+    assert 'value="1200.00"' in html and 'value="65.00"' in html
+    assert "On the bill: $1,200.00" in html
     assert "AI-generated explanation" in html
     assert "not medical or financial advice" in html
     assert "add up to the bill's total of $1,265.00" in html
@@ -287,6 +289,196 @@ def test_upload_saves_nothing_and_writes_no_files(client, fake_ai, data_dir):
     assert upload(client).status_code == 200
     after = {name: (data_dir / name).read_text(encoding="utf-8") for name in files_in(data_dir)}
     assert after == before
+
+
+def test_review_page_is_a_form_with_every_row_editable(client, fake_ai):
+    fake_ai(GOOD_ANSWER)
+    html = upload(client).get_data(as_text=True)
+    assert 'action="/bills/save"' in html
+    assert 'name="csrf_token"' in html
+    assert 'name="row_count" value="2"' in html
+    for i in (0, 1):
+        for field in ("description", "date", "amount", "category"):
+            assert f'<label class="field__label" for="f-{field}-{i}">' in html
+        assert f'id="f-include-{i}"' in html
+    assert 'name="provider"' in html and 'value="Lakeside Imaging (fictional)"' in html
+    assert 'value="2026-10-02"' in html
+
+
+def test_readable_rows_start_included_and_flagged_rows_start_excluded(client, fake_ai):
+    fake_ai({"items": [item(), item(amount="N/A")]})
+    html = upload(client).get_data(as_text=True)
+    assert re.search(r'id="f-include-0"[^>]*checked', html)
+    assert not re.search(r'id="f-include-1"[^>]*checked', html)
+
+
+# Saving approved rows (B4, B5)
+def save_form(**changes):
+    form = {
+        "row_count": "2",
+        "provider": "Lakeside Imaging (fictional)",
+        "bill_total": "$1,265.00", "bill_date": "2026-10-10",
+        "include-0": "yes", "description-0": "MRI knee without contrast", "date-0": "2026-10-02",
+        "amount-0": "1200.00", "category-0": "imaging", "explanation-0": "A scan.", "on_bill-0": "$1,200.00",
+        "include-1": "yes", "description-1": "Radiologist reading", "date-1": "2026-10-02",
+        "amount-1": "65.00", "category-1": "imaging", "explanation-1": "A review.", "on_bill-1": "65.00",
+    }
+    form.update(changes)
+    return {k: v for k, v in form.items() if v is not None}
+
+
+def save(client, form, token="fetch"):
+    data = dict(form)
+    if token == "fetch":
+        data["csrf_token"] = get_csrf_token(client, "/bills/")
+    return client.post("/bills/save", data=data)
+
+
+def stored_expenses(data_dir):
+    return json.loads((data_dir / "expenses.json").read_text(encoding="utf-8"))
+
+
+def test_approved_rows_are_saved_as_billed_expenses(client, fake_ai, data_dir):
+    calls = fake_ai(GOOD_ANSWER)
+    before = stored_expenses(data_dir)
+    response = save(client, save_form())
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/expenses/")
+    new = stored_expenses(data_dir)[len(before):]
+    assert [(e["description"], e["actual_cents"]) for e in new] == [
+        ("MRI knee without contrast", 120000), ("Radiologist reading", 6500)]
+    for e in new:
+        assert e["source"] == "bill"
+        assert e["provider"] == "Lakeside Imaging (fictional)"
+        assert e["date"] == "2026-10-02"
+        assert e["category"] == "imaging"
+        assert e["estimated_cents"] is None
+        assert e["paid_cents"] == 0
+        assert e["appointment_id"] is None
+        assert "explanation" not in e
+    top = max(e["id"] for e in before)
+    assert [e["id"] for e in new] == [top + 1, top + 2]
+    assert calls == []  # saving never calls the AI again
+    html = client.get("/expenses/").get_data(as_text=True)
+    assert "Saved 2 expenses from the bill" in html
+    assert "From a bill" in html
+
+
+def test_unchecked_rows_are_not_saved(client, data_dir):
+    before = len(stored_expenses(data_dir))
+    assert save(client, save_form(**{"include-1": None})).status_code == 302
+    new = stored_expenses(data_dir)[before:]
+    assert [e["description"] for e in new] == ["MRI knee without contrast"]
+
+
+def test_edited_values_are_what_gets_saved(client, data_dir):
+    before = len(stored_expenses(data_dir))
+    form = save_form(**{"amount-0": "$1,150.50", "description-0": "Knee MRI", "date-0": "2026-10-03",
+                        "category-0": "other", "provider": "Edited Clinic (fictional)", "include-1": None})
+    assert save(client, form).status_code == 302
+    (e,) = stored_expenses(data_dir)[before:]
+    assert (e["actual_cents"], e["description"], e["date"], e["category"], e["provider"]) == (
+        115050, "Knee MRI", "2026-10-03", "other", "Edited Clinic (fictional)")
+
+
+def test_zero_dollar_charge_is_kept_as_zero_not_unknown(client, data_dir):
+    before = len(stored_expenses(data_dir))
+    assert save(client, save_form(**{"amount-0": "0", "include-1": None})).status_code == 302
+    (e,) = stored_expenses(data_dir)[before:]
+    assert e["actual_cents"] == 0
+
+
+@pytest.mark.parametrize("changes, field, message", [
+    ({"amount-0": "N/A"}, "amount-0", "Enter an amount like"),
+    ({"amount-0": ""}, "amount-0", "Enter the amount from the bill"),
+    ({"amount-0": "-5"}, "amount-0", "can't be negative"),
+    ({"date-0": ""}, "date-0", "Date of service is required"),
+    ({"date-0": "10/02/2026"}, "date-0", "Enter a valid date"),
+    ({"category-0": "spa"}, "category-0", "Choose a category"),
+    ({"category-1": ""}, "category-1", "Choose a category"),
+    ({"description-1": "x" * 201}, "description-1", "200 characters"),
+    ({"provider": ""}, "provider", "Provider is required"),
+    ({"provider": "p" * 101}, "provider", "100 characters"),
+    ({"include-0": None, "include-1": None}, "rows", "Select at least one charge"),
+])
+def test_invalid_rows_save_nothing_and_keep_input(client, data_dir, changes, field, message):
+    before = (data_dir / "expenses.json").read_text(encoding="utf-8")
+    response = save(client, save_form(**changes))
+    html = html_lib.unescape(response.get_data(as_text=True))
+    assert response.status_code == 400
+    assert message in html
+    assert f'href="#f-{field}"' in html
+    assert (data_dir / "expenses.json").read_text(encoding="utf-8") == before
+    assert 'value="Radiologist reading"' in html or field == "description-1"
+    assert "A scan." in html  # the explanation is shown again
+
+
+def test_errors_on_excluded_rows_are_ignored(client, data_dir):
+    before = len(stored_expenses(data_dir))
+    assert save(client, save_form(**{"include-1": None, "amount-1": "N/A"})).status_code == 302
+    assert len(stored_expenses(data_dir)) == before + 1
+
+
+@pytest.mark.parametrize("row_count", ["", "abc", "0", "-1", str(bills.MAX_ITEMS + 1)])
+def test_tampered_row_count_is_rejected(client, data_dir, row_count):
+    before = (data_dir / "expenses.json").read_text(encoding="utf-8")
+    assert save(client, save_form(row_count=row_count)).status_code == 400
+    assert (data_dir / "expenses.json").read_text(encoding="utf-8") == before
+
+
+def test_save_requires_csrf(client, data_dir):
+    before = (data_dir / "expenses.json").read_text(encoding="utf-8")
+    assert save(client, save_form(), token=None).status_code == 400
+    assert (data_dir / "expenses.json").read_text(encoding="utf-8") == before
+
+
+def test_saved_bill_counts_in_the_expense_summary(client, data_dir):
+    billed_before = expenses.summarize(stored_expenses(data_dir))["billed"]
+    assert save(client, save_form()).status_code == 302
+    assert expenses.summarize(stored_expenses(data_dir))["billed"] == billed_before + 126500
+
+
+def test_explanation_is_escaped_when_redisplayed(client):
+    response = save(client, save_form(**{"explanation-0": "<script>alert(1)</script>", "amount-0": "N/A"}))
+    html = response.get_data(as_text=True)
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+@pytest.mark.parametrize("bill_date", ["not a date", "2026-13-40", "<b>x</b>"])
+def test_tampered_bill_date_is_not_shown(client, bill_date):
+    response = save(client, save_form(bill_date=bill_date, **{"amount-0": "N/A"}))
+    assert response.status_code == 400
+    assert "Bill dated" not in response.get_data(as_text=True)
+
+
+def test_unreadable_date_from_the_bill_is_shown_as_a_hint(client, fake_ai):
+    fake_ai({"items": [item(service_date="10/02/2026")]})
+    html = upload(client).get_data(as_text=True)
+    assert "On the bill: 10/02/2026" in html
+
+
+def test_ai_warnings_survive_a_failed_save(client, fake_ai):
+    fake_ai({"items": [item(), item(amount="N/A")]})
+    html = upload(client).get_data(as_text=True)
+    problems = re.search(r'name="problems-1" value="([^"]*)"', html).group(1)
+    form = save_form(**{"problems-1": html_lib.unescape(problems), "include-1": None, "date-0": ""})
+    html = html_lib.unescape(save(client, form).get_data(as_text=True))
+    assert "Couldn't read this amount" in html
+    assert "1 item needs" in html
+
+
+def test_each_checkbox_label_names_its_charge(client, fake_ai):
+    fake_ai(GOOD_ANSWER)
+    html = upload(client).get_data(as_text=True)
+    assert "Save charge 1<span class=\"visually-hidden\">: MRI knee without contrast</span>" in html
+
+
+def test_review_totals_follow_the_edited_rows(client):
+    html = html_lib.unescape(save(client, save_form(**{"amount-1": "N/A"})).get_data(as_text=True))
+    assert "No total is shown until every amount has been read" in html
+    html = html_lib.unescape(save(client, save_form(**{"category-1": ""})).get_data(as_text=True))
+    assert "add up to the bill's total of $1,265.00" in html
 
 
 # The provider module

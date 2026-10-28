@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import field, select_field, error_summary %}
 {% block title %}Review bill{% endblock %}
 
 {% block content %}
@@ -7,61 +8,92 @@
   <div>
     <h1 class="page-header__title">Review this bill</h1>
     <p class="muted">
-      {% if bill.provider %}{{ bill.provider }}{% else %}Provider not found{% endif %}
-      {%- if bill.bill_date %} · Bill dated {{ bill.bill_date|fmt_date }}{% endif %}
-      · {{ bill["items"]|length }} {{ "charge" if bill["items"]|length == 1 else "charges" }}
+      {{ form.get("provider") or "Provider not found" }}
+      {%- if bill_date %} · Bill dated {{ bill_date|fmt_date }}{% endif %}
+      · {{ rows|length }} {{ "charge" if rows|length == 1 else "charges" }}
     </p>
   </div>
 </div>
 
-<p class="alert alert--warning">Nothing has been saved. Check every charge against your bill. AI can misread amounts or dates.</p>
+<p class="alert alert--warning">Nothing has been saved yet. Check every charge against your bill, fix anything the AI misread, untick anything you don't want, then save.</p>
 
-<section class="card panel" aria-labelledby="totals-heading">
-  <h2 id="totals-heading" class="panel__title">Totals</h2>
-  {% if bill.problem_count %}
-    <p class="bill-check bill-check--problem">{{ bill.problem_count }} {{ "item needs" if bill.problem_count == 1 else "items need" }} checking: some details couldn't be read. They're marked below.</p>
-  {% endif %}
-  {% if bill.total_raw and bill.total_cents is none %}
-    <p class="bill-check bill-check--problem">Couldn't read the bill's total ({{ bill.total_raw }}). Check it on your bill.</p>
-  {% endif %}
-  {% if bill.total_matches %}
-    <p class="bill-check bill-check--ok">The charges add up to the bill's total of {{ bill.total_cents|money }}.</p>
-  {% elif bill.total_matches is false %}
-    <p class="bill-check bill-check--problem">The charges ({{ bill.items_total_cents|money }}) don't add up to the bill's total ({{ bill.total_cents|money }}). A charge may be missing or misread.</p>
-  {% elif bill.items_total_cents is not none %}
-    <p class="bill-check">The charges add up to {{ bill.items_total_cents|money }}.{% if not bill.total_raw %} No total was found on the bill to compare.{% endif %}</p>
-  {% else %}
-    <p class="bill-check">No total is shown until every amount has been read.</p>
-  {% endif %}
-  <p class="field__hint">Totals are calculated by MedFlow from the amounts below, not by the AI.</p>
-</section>
+<form method="post" action="{{ url_for('bills.save') }}" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="row_count" value="{{ rows|length }}">
+  <input type="hidden" name="bill_total" value="{{ form.get('bill_total', '') }}">
+  <input type="hidden" name="bill_date" value="{{ form.get('bill_date', '') }}">
+  {{ error_summary(errors) }}
 
-<section class="stack bill-items" aria-labelledby="items-heading">
-  <h2 id="items-heading" class="section-title">Charges</h2>
-  <ol class="bill-list">
-    {% for item in bill["items"] %}
-      <li class="card bill-item{% if item.problems %} bill-item--problem{% endif %}">
-        <div class="bill-item__top">
-          <h3 class="bill-item__title">{{ item.description or "No description" }}</h3>
-          <p class="bill-item__amount">{{ item.amount_cents|money if item.amount_cents is not none else item.amount_raw or "—" }}</p>
-        </div>
-        <p class="bill-item__meta">
-          {% if item.service_date %}Date of service: {{ item.service_date|fmt_date }}{% else %}Date of service: {{ item.service_date_raw or "not shown" }}{% endif %}
-        </p>
-        {% if item.problems %}
-          <ul class="bill-item__problems">
-            {% for problem in item.problems %}<li>{{ problem }}</li>{% endfor %}
-          </ul>
-        {% endif %}
-        {% if item.explanation %}
-          <div class="bill-item__explain">
-            <p class="bill-item__label">AI-generated explanation</p>
-            <p>{{ item.explanation }}</p>
+  <section class="card panel" aria-labelledby="totals-heading">
+    <h2 id="totals-heading" class="panel__title">Totals</h2>
+    {% if problem_count %}
+      <p class="bill-check bill-check--problem">{{ problem_count }} {{ "item needs" if problem_count == 1 else "items need" }} checking: some details couldn't be read. They're marked below and not ticked.</p>
+    {% endif %}
+    {% if totals.total_raw and totals.total_cents is none %}
+      <p class="bill-check bill-check--problem">Couldn't read the bill's total ({{ totals.total_raw }}). Check it on your bill.</p>
+    {% endif %}
+    {% if not totals.selected %}
+      <p class="bill-check">No charges are ticked.</p>
+    {% elif totals.total_matches %}
+      <p class="bill-check bill-check--ok">The selected charges add up to the bill's total of {{ totals.total_cents|money }}.</p>
+    {% elif totals.total_matches is false %}
+      <p class="bill-check bill-check--problem">The selected charges ({{ totals.items_total_cents|money }}) don't add up to the bill's total ({{ totals.total_cents|money }}). A charge may be missing, unticked or misread.</p>
+    {% elif totals.items_total_cents is not none %}
+      <p class="bill-check">The selected charges add up to {{ totals.items_total_cents|money }}.{% if not totals.total_raw %} No total was found on the bill to compare.{% endif %}</p>
+    {% else %}
+      <p class="bill-check">No total is shown until every amount has been read.</p>
+    {% endif %}
+    <p class="field__hint">Totals are calculated by MedFlow from the amounts below, not by the AI.</p>
+  </section>
+
+  <section class="card form-card bill-provider" aria-label="Provider">
+    {{ field("provider", "Provider", form, errors, required=true, maxlength=100, hint="Saved with every charge you approve.") }}
+  </section>
+
+  <section class="stack bill-items" id="f-rows" aria-labelledby="items-heading" tabindex="-1">
+    <h2 id="items-heading" class="section-title">Charges</h2>
+    <ol class="bill-list">
+      {% for row in rows %}
+        {% set i = row.index %}
+        {% set included = form.get("include-" ~ i) == "yes" %}
+        <li class="card bill-item{% if row.problems %} bill-item--problem{% endif %}">
+          <div class="bill-item__top">
+            <input class="bill-item__check" type="checkbox" id="f-include-{{ i }}" name="include-{{ i }}" value="yes"{% if included %} checked{% endif %}>
+            <label class="bill-item__title" for="f-include-{{ i }}">Save charge {{ i + 1 }}<span class="visually-hidden">: {{ form.get("description-" ~ i) }}</span></label>
+            {% if form.get("on_bill-" ~ i) %}<p class="bill-item__amount">On the bill: {{ form.get("on_bill-" ~ i) }}</p>{% endif %}
           </div>
-        {% endif %}
-      </li>
-    {% endfor %}
-  </ol>
-  <p class="field__hint">AI-generated explanations are general information, not medical or financial advice. Check them against your bill.</p>
-</section>
+          {% if row.problems %}
+            <ul class="bill-item__problems">
+              {% for problem in row.problems %}<li>{{ problem }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+          {{ field("description-" ~ i, "Description", form, errors, maxlength=200) }}
+          <div class="field-row">
+            {% set date_raw = form.get("date_raw-" ~ i, "") %}
+            {{ field("date-" ~ i, "Date of service", form, errors, type="date", required=true,
+                     hint=("On the bill: " ~ date_raw) if date_raw and date_raw != form.get("date-" ~ i) else none) }}
+            {{ field("amount-" ~ i, "Amount billed", form, errors, required=true, inputmode="decimal", placeholder="0.00") }}
+          </div>
+          {{ select_field("category-" ~ i, "Category", category_choices, form, errors, required=true) }}
+          <input type="hidden" name="explanation-{{ i }}" value="{{ form.get('explanation-' ~ i, '') }}">
+          <input type="hidden" name="on_bill-{{ i }}" value="{{ form.get('on_bill-' ~ i, '') }}">
+          <input type="hidden" name="date_raw-{{ i }}" value="{{ date_raw }}">
+          <input type="hidden" name="problems-{{ i }}" value="{{ form.get('problems-' ~ i, '') }}">
+          {% if form.get("explanation-" ~ i) %}
+            <div class="bill-item__explain">
+              <p class="bill-item__label">AI-generated explanation</p>
+              <p>{{ form.get("explanation-" ~ i) }}</p>
+            </div>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+    <p class="field__hint">AI-generated explanations are general information, not medical or financial advice. Check them against your bill. Explanations aren't saved.</p>
+  </section>
+
+  <div class="actions">
+    <button class="btn btn--primary" type="submit">Save ticked charges to expenses</button>
+    <a class="btn btn--secondary" href="{{ url_for('bills.upload_form') }}">Discard</a>
+  </div>
+</form>
 {% endblock %}

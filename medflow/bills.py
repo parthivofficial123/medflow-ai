@@ -1,8 +1,8 @@
 import os
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
-from . import bill_ai, dates, expenses
+from . import bill_ai, dates, expenses, storage
 
 bp = Blueprint("bills", __name__, url_prefix="/bills")
 
@@ -128,4 +128,123 @@ def analyze():
     if not bill["items"]:
         return render_upload("No charges were found on this bill. Check that it's a medical bill "
                              "and that the file is readable, then try again.", 422)
-    return render_template("bills/review.html", bill=bill)
+    return render_review(review_form(bill))
+
+
+def review_form(bill):
+    """The review form's starting values. Rows the AI read cleanly start included; flagged rows don't."""
+    form = {
+        "row_count": str(len(bill["items"])),
+        "provider": bill["provider"],
+        "bill_date": bill["bill_date"] or "",
+        "bill_total": bill["total_raw"],
+    }
+    for i, item in enumerate(bill["items"]):
+        cents = item["amount_cents"]
+        form.update({
+            f"include-{i}": "" if item["problems"] else "yes",
+            f"description-{i}": item["description"],
+            # A date input can't show "10/02/2026", so an unreadable date starts blank with a hint.
+            f"date-{i}": item["service_date"] or "",
+            f"date_raw-{i}": item["service_date_raw"],
+            # Kept in the form so the warnings survive a re-render after a failed save.
+            f"problems-{i}": "\n".join(item["problems"]),
+            f"amount-{i}": item["amount_raw"] if cents is None else expenses.cents_to_input(cents),
+            f"category-{i}": "other",
+            f"explanation-{i}": item["explanation"],
+            f"on_bill-{i}": item["amount_raw"],
+        })
+    return form
+
+
+def row_count(form):
+    """How many rows the review form has. It comes back from the browser, so it's checked."""
+    try:
+        count = int(form.get("row_count", ""))
+    except ValueError:
+        count = 0
+    if not 1 <= count <= MAX_ITEMS:
+        abort(400, description="This review form is incomplete. Upload the bill again.")
+    return count
+
+
+def review_totals(form, count):
+    """Totals of the included rows as they now stand, decided in Python, never by the AI."""
+    included = [i for i in range(count) if form.get(f"include-{i}") == "yes"]
+    amounts = [expenses.parse_money(form.get(f"amount-{i}", ""))[0] for i in included]
+    items_total = sum(amounts) if included and None not in amounts else None
+    bill_total = form.get("bill_total", "")
+    total_cents = expenses.parse_money(bill_total)[0]
+    return {
+        "selected": len(included),
+        "items_total_cents": items_total,
+        "total_raw": bill_total,
+        "total_cents": total_cents,
+        "total_matches": None if items_total is None or total_cents is None else items_total == total_cents,
+    }
+
+
+def render_review(form, errors=None, status_code=200):
+    count = row_count(form)
+    problems = [form.get(f"problems-{i}", "").splitlines() for i in range(count)]
+    # bill_date comes back from the browser on a re-render, so only a valid date is shown.
+    bill_date, error = dates.check_date(form.get("bill_date", ""))
+    return render_template(
+        "bills/review.html",
+        form=form,
+        bill_date=None if error else bill_date,
+        rows=[{"index": i, "problems": problems[i]} for i in range(count)],
+        problem_count=sum(1 for p in problems if p),
+        totals=review_totals(form, count),
+        errors=errors or {},
+    ), status_code
+
+
+# Row fields map onto the expense form so bills reuse the exact expense validation.
+EXPENSE_FIELDS = {"date": "date", "description": "description", "category": "category", "actual": "amount"}
+
+
+def validate_rows(form, count):
+    """Return (expense records for the included rows, errors keyed by form field name)."""
+    errors = {}
+    provider = form.get("provider", "")
+    records = []
+    for i in range(count):
+        if form.get(f"include-{i}") != "yes":
+            continue
+        amount = form.get(f"amount-{i}", "")
+        data, row_errors = expenses.validate({
+            "date": form.get(f"date-{i}", ""),
+            "provider": provider,
+            "description": form.get(f"description-{i}", ""),
+            "category": form.get(f"category-{i}", ""),
+            "actual": amount,
+        }, appointments=[])
+        if not amount.strip():
+            row_errors["actual"] = "Enter the amount from the bill, or untick this charge."
+        if "provider" in row_errors:
+            errors.setdefault("provider", row_errors.pop("provider"))
+        row_errors.pop("estimated", None)  # only says "enter an amount", covered above
+        for name, message in row_errors.items():
+            errors[f"{EXPENSE_FIELDS[name]}-{i}"] = message
+        records.append(data)
+    if not records and not errors:
+        errors["rows"] = "Select at least one charge to save."
+    return records, errors
+
+
+@bp.post("/save")
+def save():
+    count = row_count(request.form)
+    records, errors = validate_rows(request.form, count)
+    if errors:
+        return render_review(request.form, errors, 400)
+
+    with storage.modify("expenses") as stored:
+        for data in records:
+            stored.append({"id": storage.next_id(stored), **data, "source": "bill",
+                           "created_at": expenses.now_iso()})
+    n = len(records)
+    flash(f"Saved {n} {'expense' if n == 1 else 'expenses'} from the bill. "
+          "Record payments here as you make them.", "success")
+    return redirect(url_for("expenses.index"))
