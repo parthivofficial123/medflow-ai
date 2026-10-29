@@ -72,7 +72,7 @@ def http_error(code, retry_delay=None, retry_after=None):
         error["details"] = [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": retry_delay}]
     headers = {"Retry-After": retry_after} if retry_after else {}
     body = io.BytesIO(json.dumps({"error": error}).encode())
-    return urllib.error.HTTPError(bill_ai.API_URL, code, "error", headers, body)
+    return urllib.error.HTTPError("https://gemini.invalid/", code, "error", headers, body)
 
 
 def test_no_key_means_not_configured(monkeypatch):
@@ -95,8 +95,29 @@ def test_request_sends_file_prompt_and_schema(gemini):
     assert config["responseMimeType"] == "application/json"
     assert config["responseJsonSchema"] == bill_ai.ANSWER_SCHEMA
     assert request.get_method() == "POST"
-    assert bill_ai.MODEL in request.full_url
+    assert request.full_url == ("https://generativelanguage.googleapis.com/v1beta/models/"
+                                f"{bill_ai.DEFAULT_MODEL}:generateContent")
     assert timeout == bill_ai.ATTEMPT_TIMEOUT_SECONDS
+
+
+def test_the_default_model_is_the_light_one():
+    assert bill_ai.DEFAULT_MODEL == "gemini-3.5-flash-lite"
+
+
+def test_gemini_model_setting_chooses_the_model(gemini, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
+    requests = gemini(gemini_reply())
+    bill_ai.call_model(PDF, "application/pdf")
+    assert "/models/gemini-3.8-flash:generateContent" in requests[0][0].full_url
+
+
+@pytest.mark.parametrize("name", ["../tunedModels/x", "gemini flash", "gemini-3.5-flash-lite?alt=sse", "Gemini"])
+def test_a_malformed_model_setting_is_refused_before_any_request(gemini, monkeypatch, name):
+    monkeypatch.setenv("GEMINI_MODEL", name)
+    requests = gemini(gemini_reply())
+    with pytest.raises(bill_ai.AIError, match="GEMINI_MODEL") as e:
+        bill_ai.call_model(PDF, "application/pdf")
+    assert e.value.status == 503 and requests == []
 
 
 def test_key_goes_in_a_header_never_the_url(gemini):

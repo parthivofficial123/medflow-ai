@@ -315,6 +315,7 @@ def test_readable_rows_start_included_and_flagged_rows_start_excluded(client, fa
 # Saving approved rows (B4, B5)
 def save_form(**changes):
     form = {
+        "review_id": "review-test-1",
         "row_count": "2",
         "provider": "Lakeside Imaging (fictional)",
         "bill_total": "$1,265.00", "bill_date": "2026-10-10",
@@ -517,7 +518,7 @@ def gemini_replies(monkeypatch):
 
 
 def busy():
-    return bill_ai.urllib.error.HTTPError(bill_ai.API_URL, 503, "busy", {}, io.BytesIO(b"{}"))
+    return bill_ai.urllib.error.HTTPError("https://gemini.invalid/", 503, "busy", {}, io.BytesIO(b"{}"))
 
 
 def test_upload_survives_a_busy_ai_service(client, gemini_replies, data_dir):
@@ -550,3 +551,51 @@ def test_upload_reports_a_malformed_answer_without_retrying(client, gemini_repli
     assert response.status_code == 502
     assert "couldn&#39;t read the AI&#39;s answer" in response.get_data(as_text=True)
     assert len(calls) == 1
+
+
+# A second click while a bill is being read or saved is ignored (public/static/js/app.js).
+
+def test_upload_and_save_forms_opt_in_to_the_double_submit_guard(client, fake_ai):
+    upload_page = client.get("/bills/").get_data(as_text=True)
+    assert 'data-busy-label="Reading your bill' in upload_page
+    assert "data-busy-status" in upload_page and 'role="status"' in upload_page
+    fake_ai(GOOD_ANSWER)
+    review_page = upload(client).get_data(as_text=True)
+    assert 'data-busy-label="Saving' in review_page
+
+
+def test_pages_load_the_script_deferred(client):
+    html = client.get("/bills/").get_data(as_text=True)
+    assert '<script src="/static/js/app.js" defer></script>' in html
+    assert client.get("/static/js/app.js").status_code == 200
+
+
+def test_the_review_form_carries_a_one_time_review_id(client, fake_ai):
+    fake_ai(GOOD_ANSWER)
+    first = upload(client).get_data(as_text=True)
+    second = upload(client).get_data(as_text=True)
+    ids = [re.search(r'name="review_id" value="([^"]+)"', html).group(1) for html in (first, second)]
+    assert len(ids[0]) >= 16 and ids[0] != ids[1]
+
+
+def test_saving_the_same_review_twice_adds_nothing_the_second_time(client, data_dir):
+    first = save(client, save_form())
+    count = len(stored_expenses(data_dir))
+    again = save(client, save_form())  # e.g. Back to the review page, then Save again
+    assert first.status_code == again.status_code == 302
+    assert len(stored_expenses(data_dir)) == count
+    assert "already saved" in html_lib.unescape(client.get("/expenses/").get_data(as_text=True))
+
+
+def test_a_different_review_of_the_same_bill_can_still_be_saved(client, data_dir):
+    save(client, save_form())
+    count = len(stored_expenses(data_dir))
+    save(client, save_form(review_id="review-test-2"))
+    assert len(stored_expenses(data_dir)) == count + 2
+
+
+@pytest.mark.parametrize("review_id", [None, "", "x" * 65])
+def test_a_save_without_a_valid_review_id_is_rejected(client, data_dir, review_id):
+    before = stored_expenses(data_dir)
+    assert save(client, save_form(review_id=review_id)).status_code == 400
+    assert stored_expenses(data_dir) == before

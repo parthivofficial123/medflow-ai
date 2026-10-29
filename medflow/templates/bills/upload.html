@@ -13,7 +13,8 @@
   <h2 id="upload-heading" class="form-card__title">Upload a bill</h2>
   <p class="alert alert--warning">This demo is for <strong>fictional bills only</strong>. Don't upload a real bill or anyone's personal information.</p>
   {% if error %}<p class="alert alert--error" role="alert" id="f-bill-error">{{ error }}</p>{% endif %}
-  <form method="post" action="{{ url_for('bills.analyze') }}" enctype="multipart/form-data" novalidate>
+  <form method="post" action="{{ url_for('bills.analyze') }}" enctype="multipart/form-data" novalidate
+    data-busy-label="Reading your bill…" data-busy-status-text="Reading your bill with AI. Please keep this page open.">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field{% if error %} field--error{% endif %}">
       <label class="field__label" for="f-bill">Bill file</label>
@@ -24,7 +25,8 @@
     <div class="actions">
       <button class="btn btn--primary" type="submit">Read this bill</button>
     </div>
-    <p class="field__hint">Reading usually takes under a minute. When the free AI service is busy it can take up to 2½ minutes, so click once and keep this page open.</p>
+    <p class="field__hint">Reading usually takes a few seconds, and up to 45 seconds when the free AI service is busy.</p>
+    <p class="field__hint" role="status" data-busy-status></p>
   </form>
 </section>
 {% endblock %}

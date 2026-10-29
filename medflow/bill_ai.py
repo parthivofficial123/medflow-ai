@@ -28,7 +28,8 @@ List every charge on the bill. For each charge give:
 - amount: the amount exactly as printed, including any $ sign or minus sign
 - explanation: one or two plain-language sentences on what the charge usually is
 
-Also give provider (the billing provider's name, or ""), bill_date (YYYY-MM-DD, or "")
+Also give provider (the billing provider's name exactly as written, including any words in
+parentheses, or ""), bill_date (YYYY-MM-DD, or "")
 and total (the bill's total amount exactly as printed, or "").
 
 Rules:
@@ -66,18 +67,22 @@ ANSWER_SCHEMA = {
 }
 
 
-MODEL = "gemini-3.8-flash"
-API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-# Measured 2026-10-28: a one-page bill normally comes back in seconds, but when the free
-# tier is busy a call that succeeds can take 80 s, and others hang or get HTTP 503.
-# So each attempt may wait 90 s; busy and timed-out calls are retried a few times with
-# growing waits; and the whole analysis stops after TOTAL_SECONDS, well under Vercel's
-# 300 s limit. At most MAX_ATTEMPTS requests are spent on one upload.
-ATTEMPT_TIMEOUT_SECONDS = 90
-TOTAL_SECONDS = 150
+# Chosen 2026-10-28: gemini-3.8-flash was overloaded on the free tier (HTTP 503, 80 s+
+# replies); the lite model read the same bills correctly in seconds. GEMINI_MODEL in the
+# environment (or .env) picks another; there is no automatic fallback between models.
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
+# The name goes into the request URL, so only a plain model id is accepted.
+MODEL_NAME = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*")
+# Measured 2026-10-28 with gemini-3.5-flash-lite: 1.3-2.9 s per one-page bill over 10
+# calls. An attempt with no reply after 20 s (about 7x the slowest) is treated as hung and
+# retried; busy (5xx) replies are retried with growing waits; and the whole analysis stops
+# after TOTAL_SECONDS, so a user never waits more than about 45 s for an answer or a clear
+# error. At most MAX_ATTEMPTS requests are spent on one upload.
+ATTEMPT_TIMEOUT_SECONDS = 20
+TOTAL_SECONDS = 45
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = 2        # then 4; each plus up to 1 s of jitter
-MIN_ATTEMPT_SECONDS = 20   # don't start an attempt that has less time than this left
+MIN_ATTEMPT_SECONDS = 10   # don't start an attempt that has less time than this left
 MAX_RATE_LIMIT_WAIT = 10   # a 429 asking for a longer wait (or a daily limit) isn't retried
 RETRY_STATUSES = {500, 502, 503, 504}
 
@@ -107,6 +112,10 @@ def call_model(file_bytes, media_type):
     if not key:
         raise AIError("AI analysis isn't configured, so this bill can't be read. "
                       "The rest of MedFlow works as usual.", status=503)
+    model = os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
+    if not MODEL_NAME.fullmatch(model):
+        raise AIError("AI analysis isn't set up correctly (GEMINI_MODEL isn't a model name). "
+                      "The rest of MedFlow works as usual.", status=503)
     body = {
         "contents": [{"role": "user", "parts": [
             {"inline_data": {"mime_type": media_type, "data": base64.b64encode(file_bytes).decode()}},
@@ -116,7 +125,8 @@ def call_model(file_bytes, media_type):
     }
     # The key goes in a header, never the URL, so it can't end up in a log of URLs.
     request = urllib.request.Request(
-        API_URL, data=json.dumps(body).encode(), method="POST",
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        data=json.dumps(body).encode(), method="POST",
         headers={"Content-Type": "application/json", "x-goog-api-key": key},
     )
     deadline = clock() + TOTAL_SECONDS

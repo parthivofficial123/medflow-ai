@@ -12,6 +12,7 @@ bills.check_answer(), so amounts and dates are judged after Python's validation.
 import json
 import os
 import sys
+import time
 from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
@@ -33,27 +34,38 @@ def score(expected, bill):
     """Match each expected item to an extracted item with the same amount and a similar description."""
     remaining = list(bill["items"])
     found = amounts = dates_ok = 0
+    mismatches = []
     for want in expected["items"]:
         match = next((got for got in remaining if similar(want["description"], got["description"])), None)
         # A reworded description still counts when the amount is exactly right.
         match = match or next((got for got in remaining if got["amount_cents"] == want["amount_cents"]), None)
         if match is None:
+            mismatches.append(f"missing item {want['description']!r}")
             continue
         remaining.remove(match)
         found += 1
         amounts += match["amount_cents"] == want["amount_cents"]
         dates_ok += match["service_date"] == want["service_date"]
+        for field in ("amount_cents", "service_date"):
+            if match[field] != want[field]:
+                mismatches.append(f"{want['description']!r} {field}: got {match[field]!r}, want {want[field]!r}")
+    mismatches += [f"extra item {got['description']!r}" for got in remaining]
+    for field, got in (("provider", bill["provider"]), ("bill_date", bill["bill_date"]),
+                       ("total_cents", bill["total_cents"])):
+        if got != expected[field]:
+            mismatches.append(f"{field}: got {got!r}, want {expected[field]!r}")
     return {
         "items": f"{found}/{len(expected['items'])}",
         "extra": len(remaining),
         "amounts": f"{amounts}/{len(expected['items'])}",
         "dates": f"{dates_ok}/{len(expected['items'])}",
         "provider": bill["provider"] == expected["provider"],
+        "bill_date": bill["bill_date"] == expected["bill_date"],
         "total": bill["total_cents"] == expected["total_cents"],
         "adds_up": bill["total_matches"] is True,
         "flags": bill["problem_count"],
-        "perfect": found == amounts == dates_ok == len(expected["items"]) and not remaining
-                   and bill["total_cents"] == expected["total_cents"],
+        "perfect": not mismatches,
+        "mismatches": mismatches,
     }
 
 
@@ -64,14 +76,17 @@ def main():
     with open(os.path.join(BILLS_DIR, "expected.json"), encoding="utf-8") as f:
         expected = json.load(f)
 
+    print("Model:", os.environ.get("GEMINI_MODEL") or bill_ai.DEFAULT_MODEL)
     results = {}
     for name, want in expected.items():
         with open(os.path.join(BILLS_DIR, name), "rb") as f:
             content = f.read()
+        start = time.monotonic()
         try:
             results[name] = score(want, bills.check_answer(bill_ai.extract(content, "application/pdf")))
         except bill_ai.AIError as e:
             results[name] = {"error": e.message}
+        results[name]["seconds"] = round(time.monotonic() - start, 1)
         print(f"{name}: {json.dumps(results[name])}")
 
     injection = results.get("03_prompt_injection_test.pdf", {})

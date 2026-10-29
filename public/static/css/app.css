@@ -373,3 +373,4 @@ a { color: var(--color-primary); }
 .account__email { color: var(--color-muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account__signout { border: 0; background: none; font: inherit; cursor: pointer; }
 .signin { max-width: 32rem; margin-inline: auto; display: grid; gap: var(--space-3); }
+.btn:disabled { opacity: 0.7; cursor: progress; }

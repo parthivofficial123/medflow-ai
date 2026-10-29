@@ -1,6 +1,7 @@
 import os
+import secrets
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
 from . import bill_ai, dates, expenses, storage
 
@@ -9,6 +10,8 @@ bp = Blueprint("bills", __name__, url_prefix="/bills")
 # Vercel rejects request bodies over 4.5 MB.
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 MAX_ITEMS = 100
+# Review ids of recent saves, kept in the session so Back + Save can't save a bill twice.
+SAVED_REVIEWS_KEPT = 20
 # The file's first bytes decide its type; the name only has to agree with them.
 FILE_TYPES = {
     "application/pdf": ((b"%PDF-",), (".pdf",)),
@@ -135,6 +138,7 @@ def analyze():
 def review_form(bill):
     """The review form's starting values. Rows the AI read cleanly start included; flagged rows don't."""
     form = {
+        "review_id": secrets.token_urlsafe(16),
         "row_count": str(len(bill["items"])),
         "provider": bill["provider"],
         "bill_date": bill["bill_date"] or "",
@@ -236,6 +240,13 @@ def validate_rows(form, count):
 
 @bp.post("/save")
 def save():
+    review_id = request.form.get("review_id", "")
+    if not 1 <= len(review_id) <= 64:
+        abort(400, description="This review form is incomplete. Upload the bill again.")
+    saved_reviews = session.get("saved_reviews", [])
+    if review_id in saved_reviews:
+        flash("These charges were already saved, so nothing was added again.", "success")
+        return redirect(url_for("expenses.index"))
     count = row_count(request.form)
     records, errors = validate_rows(request.form, count)
     if errors:
@@ -245,6 +256,7 @@ def save():
         for data in records:
             stored.append({"id": storage.next_id(stored), **data, "source": "bill",
                            "created_at": expenses.now_iso()})
+    session["saved_reviews"] = (saved_reviews + [review_id])[-SAVED_REVIEWS_KEPT:]
     n = len(records)
     flash(f"Saved {n} {'expense' if n == 1 else 'expenses'} from the bill. "
           "Record payments here as you make them.", "success")

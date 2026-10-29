@@ -17,8 +17,9 @@
 
 <p class="alert alert--warning">Nothing has been saved yet. Check every charge against your bill, fix anything the AI misread, untick anything you don't want, then save.</p>
 
-<form method="post" action="{{ url_for('bills.save') }}" novalidate>
+<form method="post" action="{{ url_for('bills.save') }}" novalidate data-busy-label="Saving…">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="review_id" value="{{ form.get('review_id', '') }}">
   <input type="hidden" name="row_count" value="{{ rows|length }}">
   <input type="hidden" name="bill_total" value="{{ form.get('bill_total', '') }}">
   <input type="hidden" name="bill_date" value="{{ form.get('bill_date', '') }}">

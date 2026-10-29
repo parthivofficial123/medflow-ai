@@ -4,7 +4,7 @@ A personal healthcare navigation web app for a local demo. Primary feature: AI-p
 
 ## Hard constraints (ask before breaking any of these)
 
-- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS. Data: Supabase (Postgres + Auth, Google Sign-In) is the primary database; JSON files remain an offline fallback for development and tests (`MEDFLOW_STORAGE=json`, the default). AI: Google Gemini API free tier (`gemini-3.8-flash`) for bill analysis, called with Python's standard library only from `medflow/bill_ai.py`. Free-tier inputs may be reviewed by Google and used to improve its products, so only fictional bills are ever sent.
+- Stack: Python 3.11+, Flask, Jinja2, vanilla JavaScript, plain CSS. Data: Supabase (Postgres + Auth, Google Sign-In) is the primary database; JSON files remain an offline fallback for development and tests (`MEDFLOW_STORAGE=json`, the default). AI: Google Gemini API free tier for bill analysis, model `gemini-3.5-flash-lite` by default (`GEMINI_MODEL` in `.env` overrides it; no automatic fallback to another model without approval), called with Python's standard library only from `medflow/bill_ai.py`. Free-tier inputs may be reviewed by Google and used to improve its products, so only fictional bills are ever sent.
 - No React, Next.js, Tailwind, build step, ORM, LangChain, agent frameworks, vector databases, or microservices. No database other than Supabase.
 - No new dependency (pip or CDN) without explicit approval. Runtime: Flask, `supabase`, `python-dotenv` (approved 2026-10-28). Dev: pytest. Local settings live in `.env` (gitignored), which the Flask CLI loads; tests never read it.
 - No plugins, MCP servers, background services, or external skills unless approved.
@@ -63,7 +63,7 @@ Rules:
 - Templates: extend `base.html`; shared form fields and cards go in `_macros.html`. Every input has a `<label>`. Use semantic HTML (`main`, `nav`, `table`, `button`).
 - Autoescaping stays on. Never use `|safe` on user-supplied or AI-generated text.
 - CSS: one file, design tokens as custom properties on `:root` (color, spacing, radius, font). Simple class names (`.card`, `.card__title`, `.btn--primary`). Mobile-first; must work at 375px width. Respect `prefers-reduced-motion`.
-- JS: one file, no libraries, `defer`-loaded, feature-detect, and the page still works if it fails.
+- JS: one file (`public/static/js/app.js`), no libraries, `defer`-loaded, feature-detect, and the page still works if it fails. Forms that must not be sent twice (bill analysis, bill save) carry `data-busy-label`.
 - Comments explain *why*, not *what*. No commented-out code.
 
 ## Security (local demo, still done properly)

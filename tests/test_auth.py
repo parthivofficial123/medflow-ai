@@ -287,7 +287,7 @@ def test_deleting_an_appointment_keeps_its_expenses_unlinked(sb_app, fake_db):
 def test_bill_charges_are_saved_to_supabase(sb_app, fake_db):
     client = sign_in(sb_app, fake_db)
     form = {
-        "row_count": "1", "provider": "Lakeside Imaging (fictional)", "bill_total": "$65.00",
+        "review_id": "review-test-1", "row_count": "1", "provider": "Lakeside Imaging (fictional)", "bill_total": "$65.00",
         "bill_date": "2026-10-10", "include-0": "yes", "description-0": "Radiologist reading",
         "date-0": "2026-10-02", "amount-0": "65.00", "category-0": "imaging",
         "explanation-0": "A review.", "on_bill-0": "65.00",
