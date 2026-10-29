@@ -1,7 +1,7 @@
 # GitHub readiness audit
 
-_Audited 2026-10-28 against commit `efdbe12` plus the fixes listed in section 5. Nothing was
-pushed, deployed or rewritten. No secret values appear in this report._
+_Audited 2026-10-28 against commit `07759a9` (rewritten from `efdbe12` when the commit email changed) plus the fixes listed in section 5. Nothing was pushed or
+deployed. No secret values appear in this report._
 
 ## 1. Executive summary
 
