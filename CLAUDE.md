@@ -28,7 +28,7 @@ medflow/<feature>.py    one Blueprint per feature: routes + that feature's valid
 medflow/templates/      base.html, _macros.html, one folder per feature
 public/static/          css/app.css, js/app.js (in public/ so Vercel serves them)
 supabase/               schema.sql, isolation_test.sql, README.md (setup steps run by hand)
-data/                   committed data: real price reference files, fictional demo seed, fictional sample_bills/
+data/                   committed data: fictional demo seed, fictional sample_bills/ (real price reference files: planned, not added yet)
 instance/               JSON-mode user data (gitignored), copied from data/seed/ on first run
 tests/                  pytest, one file per module
 scripts/                hand-run tools (benchmark_bills.py makes real API calls; never run by pytest)

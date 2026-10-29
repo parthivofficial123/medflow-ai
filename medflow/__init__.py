@@ -14,6 +14,12 @@ from . import storage
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 DEV_SECRET = "dev-only-not-a-secret"
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
 log = logging.getLogger(__name__)
 
 
@@ -32,8 +38,9 @@ def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True, static_folder="../public/static")
     app.request_class = MemoryUploadRequest
     app.config.from_mapping(
-        # The fallback only exists so a local demo starts without setup.
-        SECRET_KEY=os.environ.get("MEDFLOW_SECRET_KEY", DEV_SECRET),
+        # The fallback only exists so a local demo starts without setup. "or", not a default:
+        # a blank MEDFLOW_SECRET_KEY= line (as in .env.example) would otherwise break sessions.
+        SECRET_KEY=os.environ.get("MEDFLOW_SECRET_KEY") or DEV_SECRET,
         SESSION_COOKIE_SAMESITE="Lax",
         MAX_CONTENT_LENGTH=bills.MAX_UPLOAD_BYTES,
         DATA_DIR=app.instance_path,
@@ -65,6 +72,13 @@ def create_app(test_config=None):
         if not expected or not sent or not secrets.compare_digest(expected, sent):
             abort(400, description="This form expired or was not sent from MedFlow. "
                                    "Go back, reload the page, and try again.")
+
+    @app.after_request
+    def set_security_headers(response):
+        # No page may be framed (clickjacking on Delete/Save) and nothing loads from other
+        # sites: templates have no inline scripts or styles, and sign-in is a plain redirect.
+        response.headers.update(SECURITY_HEADERS)
+        return response
 
     @app.context_processor
     def inject_csrf_token():

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import re
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -377,3 +378,46 @@ def test_vercel_uses_secure_cookies_and_https_callbacks(fake_db, monkeypatch):
     token = re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
     response = client.post("/login", data={"csrf_token": token}, headers=proxy)
     assert "redirect_to=https%3A%2F%2Fmedflow.example%2Fauth%2Fcallback" in response.headers["Location"]
+
+
+# Readiness audit: headers and the example settings file
+
+def test_pages_cannot_be_framed_or_sniffed(client):
+    response = client.get("/appointments/")
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "same-origin"
+    policy = response.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in policy and "frame-ancestors 'none'" in policy
+
+
+def test_error_pages_and_redirects_get_the_headers_too(client, sb_app):
+    missing = client.get("/no-such-page")
+    assert missing.status_code == 404 and missing.headers["X-Frame-Options"] == "DENY"
+    redirect = sb_app.test_client().get("/appointments/")  # signed out: sent to sign in
+    assert redirect.status_code == 302 and redirect.headers["X-Frame-Options"] == "DENY"
+
+
+def test_env_example_holds_placeholders_only():
+    text = (Path(__file__).parent.parent / ".env.example").read_text(encoding="utf-8")
+    settings = dict(line.split("=", 1) for line in text.splitlines() if line and not line.startswith("#"))
+    assert set(settings) == {"MEDFLOW_STORAGE", "MEDFLOW_SECRET_KEY", "SUPABASE_URL",
+                             "SUPABASE_PUBLISHABLE_KEY", "GEMINI_API_KEY", "GEMINI_MODEL"}
+    for name in ("MEDFLOW_SECRET_KEY", "SUPABASE_PUBLISHABLE_KEY", "GEMINI_API_KEY"):
+        assert settings[name] == "", name
+    assert "<project-ref>" in settings["SUPABASE_URL"]
+
+
+def test_a_blank_secret_key_in_env_falls_back_to_the_dev_key_locally(monkeypatch, data_dir):
+    # .env.example leaves MEDFLOW_SECRET_KEY blank; an empty key would break every session.
+    monkeypatch.setenv("MEDFLOW_SECRET_KEY", "")
+    app = create_app({"DATA_DIR": str(data_dir)})
+    assert app.config["SECRET_KEY"] == "dev-only-not-a-secret"
+    assert app.test_client().get("/appointments/").status_code == 200
+
+
+def test_a_blank_secret_key_still_stops_supabase_mode(fake_db, monkeypatch):
+    monkeypatch.setenv("MEDFLOW_SECRET_KEY", "")
+    config = {k: v for k, v in SUPABASE_CONFIG.items() if k != "SECRET_KEY"}
+    with pytest.raises(RuntimeError, match="MEDFLOW_SECRET_KEY"):
+        create_app(config)

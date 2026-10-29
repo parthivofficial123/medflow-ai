@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-10-28. **Supabase and Google Sign-In verified by the user on the real project. Bill analysis now uses `gemini-3.5-flash-lite` (3/3 benchmark, 1–2 s per bill), with bounded retries and a double-submit guard.**_
+_Last updated: 2026-10-28. **Supabase and Google Sign-In verified by the user on the real project. Bill analysis now uses `gemini-3.5-flash-lite` (3/3 benchmark, 1–2 s per bill), with bounded retries and a double-submit guard. Pre-publication audit done: verdict READY WITH CONDITIONS, see `docs/GITHUB_READINESS.md`.**_
 
 ## Goal
 Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and explains → review and fix → save to expenses, each user signed in with Google and seeing only their own data in Supabase. Then Vercel (only when approved) and, if time allows, a small price search.
@@ -18,6 +18,13 @@ Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and expla
 - **SQL:** `supabase/schema.sql` (create-only; composite PK `user_id, id`; checks mirror validation; FK keeps expense links inside one user and clears them on delete; RLS with 4 policies per table; anon has no grants). `supabase/isolation_test.sql` (rolled back; pass/fail table).
 - Browser-checked: real config → sign-in page → Supabase authorize URL (Google not enabled yet, as expected); fake Supabase → signed-in header at 375px and 1280px, reset page, sign-out. Cookie is HttpOnly; no token in the HTML.
 
+## Pre-publication audit (2026-10-28, `docs/GITHUB_READINESS.md`)
+- Verified: no `.env` value or key pattern in any tracked file or in the history (14 commits); all patient-side data fictional; RLS policies reviewed (correct); CSRF, escaping, uploads, logs, debug mode all sound. 424 tests pass.
+- Fixed: added `README.md` and `.env.example` (placeholders; `.gitignore` now un-ignores it); a blank `MEDFLOW_SECRET_KEY=` no longer breaks sessions locally; security headers on every response (CSP `default-src 'self'`, `frame-ancestors 'none'`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`); dependencies pinned to tested versions; `isolation_test.sql` also checks "A cannot hand A's rows to B" (not yet run).
+- Your decisions before the first push: commit author email is a personal Gmail (rewrite to a noreply address or accept); LICENSE; keep/move/drop `MedFlow_Tool_Evaluation.md`.
+- Open, proposed (need approval): DB-level duplicate-save guard (`review_id` unique column); app timezone for `dates.today()` on Vercel (UTC).
+- Not verified: real two-account isolation; Python 3.12 (Vercel default; tests ran on 3.14); anything on Vercel.
+
 ## Gemini timeouts (investigated 2026-10-28 evening)
 - Symptom: a fictional one-page PDF upload showed "didn't respond in time" (server log: two uploads, each "Gemini timed out after 60 seconds").
 - Measured: DNS + TLS to Google 0.12 s; `gemini-3.8-flash` exists; request format is correct (benchmark 3/3 earlier). A one-line text call with no PDF hung 180 s; a sample-bill call got HTTP 503 "model is currently experiencing high demand"; another succeeded in 81 s for 1,321 tokens (queueing, not work).
@@ -27,9 +34,10 @@ Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and expla
 
 ## Next steps
 1. Rehearse the demo with the real bill flow on Supabase; run `scripts/benchmark_bills.py` once on Friday morning to confirm the model is responsive.
-2. Supabase sign-in, persistence and linking were verified by the user on the real project; still to run: two accounts + `isolation_test.sql`.
-3. `/security-review` checkpoint before any deploy. Vercel only after the user approves (set env vars in Vercel, add the Vercel callback URL in Supabase).
-4. Small price search (Day 6 spec) if time allows.
+2. Supabase sign-in, persistence and linking were verified by the user on the real project; still to run: two accounts + `isolation_test.sql`, and confirm only Google (no email/anonymous sign-in) is enabled in Supabase Auth.
+3. Settle the three publication decisions in `docs/GITHUB_READINESS.md` section 9, then create the GitHub repo (only when the user says so).
+4. `/security-review` checkpoint before any deploy. Vercel only after the user approves: `.python-version` + tests on that version, function duration ≥ 60 s, env vars in Vercel, the Vercel callback URL and Site URL in Supabase (section 4 of the readiness report).
+5. Small price search (Day 6 spec) if time allows.
 
 ## Known limitations (Supabase)
 - `modify` is several requests, not a transaction; see the `storage.py` docstring and PLAN.md "Feature integration rules".
@@ -39,7 +47,7 @@ Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and expla
 - From code review, left for after the demo: seeding that fails half-way isn't retried (Reset fixes it); two simultaneous first sign-ins can hit a duplicate-id 503; starting sign-in in two tabs fails the first; `modify`'s lock is held across Supabase requests; a new Supabase client (no connection reuse) per request; "4 MB" text isn't derived from `MAX_UPLOAD_BYTES`.
 
 ## Day 4 features
-- `medflow/bill_ai.py`: the only module that talks to an AI provider. `PROMPT` (bill text is data, not instructions; copy amounts exactly), `ANSWER_SCHEMA` (all strings), `call_model()` (provider stub), `extract()` (JSON parse → `AIError` on failure).
+- `medflow/bill_ai.py`: the only module that talks to an AI provider. `PROMPT` (bill text is data, not instructions; copy amounts exactly), `ANSWER_SCHEMA` (all strings), `call_model()` (the Gemini request, with bounded retries), `extract()` (JSON parse → `AIError` on failure).
 - `medflow/bills.py`: `/bills/` upload → file check by leading bytes + extension (PDF/PNG/JPEG) → `extract` → `check_answer` → read-only review page. Saves nothing.
 - `check_answer`: rejects wrongly shaped answers; `null` optional fields mean "not shown"; amounts through `expenses.parse_money`, dates through `dates.check_date`; unreadable or negative amounts (`-$50`, `($50)`) are flagged, never guessed; items total only when every amount parsed; compares with the bill's printed total; flags an unreadable total. Text trimmed; max 100 items.
 - Uploads stay in memory: `MemoryUploadRequest` in `__init__.py` overrides Werkzeug's `_get_file_stream` so no upload spills to a temp file. `MAX_CONTENT_LENGTH` = 4 MB (was 5; Vercel limit) with a friendly 413 page.

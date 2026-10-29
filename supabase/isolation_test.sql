@@ -37,6 +37,15 @@ begin
   get diagnostics n = row_count;
   results := results || jsonb_build_object('c', 'A cannot delete B''s appointments', 'e', '0 rows', 'a', n || ' rows', 'p', n = 0);
 
+  -- The update policy's "with check" must stop A moving A's own rows into B's account.
+  begin
+    update public.appointments set user_id = user_b where user_id = user_a;
+    get diagnostics n = row_count;
+    results := results || jsonb_build_object('c', 'A cannot hand A''s rows to B', 'e', 'blocked', 'a', n || ' rows moved', 'p', n = 0);
+  exception when others then
+    results := results || jsonb_build_object('c', 'A cannot hand A''s rows to B', 'e', 'blocked', 'a', 'blocked (' || sqlstate || ')', 'p', true);
+  end;
+
   begin
     insert into public.appointments (user_id, id, date, time, provider, reason, created_at)
       values (user_b, 999999, '2026-11-01', '09:00', 'Test Clinic (fictional)', 'Isolation test', now());

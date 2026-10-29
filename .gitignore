@@ -1,11 +1,17 @@
 # Runtime user data: created from data/seed/ on first run, never committed
 instance/
 
-# Secrets and local config
+# Secrets and local config (.env.example holds placeholders only)
 .env
 .env.*
+!.env.example
 *.pem
 *.key
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Python / tooling
 .venv/
@@ -13,16 +19,22 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 
 # Temporary and OS/editor files
 *.tmp
+*.swp
+*~
 *.log
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+# Claude Code's per-user settings (.claude/launch.json is shared on purpose)
+.claude/settings.local.json
 
 # Vercel CLI link (created by "vercel link"; holds project ids)
 .vercel/
