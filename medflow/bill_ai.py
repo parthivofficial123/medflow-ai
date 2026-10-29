@@ -12,8 +12,11 @@ import base64
 import json
 import logging
 import os
+import random
+import re
 import urllib.error
 import urllib.request
+from time import monotonic as clock, sleep
 
 # Text on an uploaded bill reaches the model next to this prompt, so the prompt
 # says outright that the bill is content to read, never instructions to follow.
@@ -65,7 +68,18 @@ ANSWER_SCHEMA = {
 
 MODEL = "gemini-3.8-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-TIMEOUT_SECONDS = 60
+# Measured 2026-10-28: a one-page bill normally comes back in seconds, but when the free
+# tier is busy a call that succeeds can take 80 s, and others hang or get HTTP 503.
+# So each attempt may wait 90 s; busy and timed-out calls are retried a few times with
+# growing waits; and the whole analysis stops after TOTAL_SECONDS, well under Vercel's
+# 300 s limit. At most MAX_ATTEMPTS requests are spent on one upload.
+ATTEMPT_TIMEOUT_SECONDS = 90
+TOTAL_SECONDS = 150
+MAX_ATTEMPTS = 3
+BACKOFF_SECONDS = 2        # then 4; each plus up to 1 s of jitter
+MIN_ATTEMPT_SECONDS = 20   # don't start an attempt that has less time than this left
+MAX_RATE_LIMIT_WAIT = 10   # a 429 asking for a longer wait (or a daily limit) isn't retried
+RETRY_STATUSES = {500, 502, 503, 504}
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +91,14 @@ class AIError(Exception):
         super().__init__(message)
         self.message = message
         self.status = status
+
+
+class Retryable(Exception):
+    """A failure that is usually brief. error is what the user sees if retries run out."""
+
+    def __init__(self, error, reason, wait=None):
+        super().__init__(reason)
+        self.error, self.reason, self.wait = error, reason, wait
 
 
 def call_model(file_bytes, media_type):
@@ -97,34 +119,72 @@ def call_model(file_bytes, media_type):
         API_URL, data=json.dumps(body).encode(), method="POST",
         headers={"Content-Type": "application/json", "x-goog-api-key": key},
     )
+    deadline = clock() + TOTAL_SECONDS
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return answer_text(send(request, min(ATTEMPT_TIMEOUT_SECONDS, deadline - clock())))
+        except Retryable as e:
+            backoff = BACKOFF_SECONDS * 2 ** (attempt - 1) + random.uniform(0, 1)
+            # Google's own wait, but never less than the first backoff (it may say 0).
+            wait = backoff if e.wait is None else max(e.wait, BACKOFF_SECONDS)
+            if attempt == MAX_ATTEMPTS or clock() + wait + MIN_ATTEMPT_SECONDS > deadline:
+                log.warning("Gemini attempt %s of %s failed (%s); giving up", attempt, MAX_ATTEMPTS, e.reason)
+                raise e.error from None
+            log.warning("Gemini attempt %s of %s failed (%s); retrying in %.0f s",
+                        attempt, MAX_ATTEMPTS, e.reason, wait)
+            sleep(wait)
+
+
+def send(request, timeout):
+    """One request. Raises Retryable for brief failures, AIError for the rest."""
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            reply = json.load(response)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.load(response)
     except urllib.error.HTTPError as e:
+        wait = rate_limit_wait(e) if e.code == 429 else None
         e.close()
+        error = http_error(e.code)
+        if e.code in RETRY_STATUSES or (wait is not None and wait <= MAX_RATE_LIMIT_WAIT):
+            raise Retryable(error, f"HTTP {e.code}", wait) from None
         log.warning("Gemini returned HTTP %s", e.code)
-        raise http_error(e.code) from None
+        raise error from None
     except TimeoutError:
-        raise timed_out() from None
+        raise Retryable(timed_out(), f"no reply in {timeout:.0f} s") from None
     except urllib.error.URLError as e:
         # A timeout while connecting arrives wrapped in URLError.
         if isinstance(e.reason, TimeoutError):
-            raise timed_out() from None
+            raise Retryable(timed_out(), f"no connection in {timeout:.0f} s") from None
         log.warning("Couldn't reach Gemini: %s", e.reason)
         raise AIError("MedFlow couldn't reach the AI service. Check the internet connection "
                       "and try again.") from None
     except ValueError:
         raise AIError("The AI service sent an unexpected reply. Try again.") from None
-    return answer_text(reply)
+
+
+def rate_limit_wait(e):
+    """Seconds Google asks us to wait after a 429, or None if it doesn't say.
+
+    A per-minute limit comes with a short delay; a daily limit with none or a long one."""
+    retry_after = (e.headers or {}).get("Retry-After") or ""
+    if retry_after.isdigit():
+        return float(retry_after)
+    try:
+        details = json.loads(e.read(64 * 1024) or b"{}")["error"].get("details", [])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+    for detail in details:
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)s", str(detail.get("retryDelay", "")))
+        if match:
+            return float(match.group(1))
+    return None
 
 
 def timed_out():
-    log.warning("Gemini timed out after %s seconds", TIMEOUT_SECONDS)
-    return AIError("The AI service didn't respond in time. Try again.", status=504)
+    return AIError("The AI service didn't respond in time. It's often busy on the free tier; "
+                   "try again in a few minutes.", status=504)
 
 
 def http_error(code):
-    # No automatic retries: on the free tier a retry spends quota the user may not have.
     if code == 429:
         return AIError("The free AI limit has been reached for now. Wait a minute and try "
                        "again; the daily limit resets at midnight Pacific Time.", status=429)

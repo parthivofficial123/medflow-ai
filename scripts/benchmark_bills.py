@@ -1,6 +1,7 @@
 """Check Gemini's extraction of the three fictional sample bills against known answers.
 
-Run by hand only; it makes one real API call per bill (3 in total) on the free tier:
+Run by hand only; it makes one real API call per bill (3 in total) on the free tier, plus
+up to 2 retries per bill when Gemini is busy (bill_ai.MAX_ATTEMPTS):
 
     python scripts/benchmark_bills.py
 

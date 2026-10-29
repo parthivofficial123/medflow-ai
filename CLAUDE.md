@@ -93,5 +93,5 @@ pip install -r requirements.txt -r requirements-dev.txt
 flask --app medflow run --debug          # http://localhost:5000 (reads .env; MEDFLOW_STORAGE=supabase needs supabase/README.md done)
 flask --app medflow reset-demo           # JSON mode: REPLACES instance/ data with data/seed/ (asks first; --yes skips)
 pytest
-python scripts/benchmark_bills.py        # 3 real Gemini calls on the fictional sample bills; run by hand only
+python scripts/benchmark_bills.py        # real Gemini calls (3, up to 9 with retries) on the fictional sample bills; run by hand only
 ```

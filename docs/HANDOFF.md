@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-10-28. **Supabase is the primary database with Google Sign-In, built and tested against a fake. Waiting on the user to run the SQL and configure Google OAuth (`supabase/README.md`).**_
+_Last updated: 2026-10-28. **Supabase and Google Sign-In verified by the user on the real project. Gemini timeouts investigated: Google-side overload; bounded retries added. Model choice pending.**_
 
 ## Goal
 Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and explains → review and fix → save to expenses, each user signed in with Google and seeing only their own data in Supabase. Then Vercel (only when approved) and, if time allows, a small price search.
@@ -15,9 +15,17 @@ Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and expla
 - **SQL:** `supabase/schema.sql` (create-only; composite PK `user_id, id`; checks mirror validation; FK keeps expense links inside one user and clears them on delete; RLS with 4 policies per table; anon has no grants). `supabase/isolation_test.sql` (rolled back; pass/fail table).
 - Browser-checked: real config → sign-in page → Supabase authorize URL (Google not enabled yet, as expected); fake Supabase → signed-in header at 375px and 1280px, reset page, sign-out. Cookie is HttpOnly; no token in the HTML.
 
+## Gemini timeouts (investigated 2026-10-28 evening)
+- Symptom: a fictional one-page PDF upload showed "didn't respond in time" (server log: two uploads, each "Gemini timed out after 60 seconds").
+- Measured: DNS + TLS to Google 0.12 s; `gemini-3.8-flash` exists; request format is correct (benchmark 3/3 earlier). A one-line text call with no PDF hung 180 s; a sample-bill call got HTTP 503 "model is currently experiencing high demand"; another succeeded in 81 s for 1,321 tokens (queueing, not work).
+- Root cause: `gemini-3.8-flash` free tier overloaded on Google's side (503s and long hangs), and our 60 s limit was below its current latency. Not the PDF, the network or our code.
+- Fix: bounded retry with backoff (see PLAN.md bill spec): 90 s per attempt, 150 s total, at most 3 requests. Browser-checked against real Gemini: 2 attempts (90 s + 58 s), then the timeout message; Gemini still didn't answer.
+- Left as known limits (code review): no guard against a second click during the wait (no JS yet); urllib's timeout is per socket read, so a trickling reply could outrun the 150 s limit; a timed-out request may still count against free-tier quota; the "2½ minutes" hint isn't derived from `TOTAL_SECONDS`.
+- Same moment, one diagnostic call: `gemini-3.5-flash-lite` read sample bill 02 in 2.9 s, all amounts, dates and total correct. Switching or falling back to it needs approval (CLAUDE.md names `gemini-3.8-flash`).
+
 ## Next steps
-1. **User:** follow `supabase/README.md`: run `schema.sql`, create the Google OAuth client (Testing, test users), enable Google in Supabase, add the callback URLs.
-2. Sign in for real at http://localhost:5000 and run the full bill flow on Supabase; then two accounts + `isolation_test.sql`.
+1. Decide on the Gemini model (keep `gemini-3.8-flash`, switch to `gemini-3.5-flash-lite`, or use the lite model as a fallback); then run `scripts/benchmark_bills.py` on it.
+2. Supabase sign-in, persistence and linking were verified by the user on the real project; still to run: two accounts + `isolation_test.sql`.
 3. `/security-review` checkpoint before any deploy. Vercel only after the user approves (set env vars in Vercel, add the Vercel callback URL in Supabase).
 4. Small price search (Day 6 spec) if time allows.
 

@@ -490,3 +490,63 @@ def test_extract_parses_json_from_call_model(fake_ai):
 def test_prompt_treats_bill_text_as_data():
     assert "not instructions" in bill_ai.PROMPT
     assert "exactly as printed" in bill_ai.PROMPT
+
+
+# The whole path with the real Gemini client: only the network and the clock are faked.
+
+@pytest.fixture
+def gemini_replies(monkeypatch):
+    """Make urlopen answer with each given reply in turn; waits take no real time."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(bill_ai, "sleep", lambda seconds: None)
+    calls = []
+
+    def set_replies(*replies):
+        def urlopen(request, timeout):
+            reply = replies[min(len(calls), len(replies) - 1)]
+            calls.append(timeout)
+            if isinstance(reply, Exception):
+                raise reply
+            text = reply if isinstance(reply, str) else json.dumps(reply)
+            body = {"candidates": [{"content": {"parts": [{"text": text}]}, "finishReason": "STOP"}]}
+            return io.BytesIO(json.dumps(body).encode())
+        monkeypatch.setattr(bill_ai.urllib.request, "urlopen", urlopen)
+        return calls
+
+    return set_replies
+
+
+def busy():
+    return bill_ai.urllib.error.HTTPError(bill_ai.API_URL, 503, "busy", {}, io.BytesIO(b"{}"))
+
+
+def test_upload_survives_a_busy_ai_service(client, gemini_replies, data_dir):
+    calls = gemini_replies(busy(), GOOD_ANSWER)
+    response = upload(client)
+    assert response.status_code == 200
+    assert "MRI knee without contrast" in response.get_data(as_text=True)
+    assert len(calls) == 2
+    assert files_in(data_dir) == ["appointments.json", "expenses.json"]  # the bill was never written
+
+
+def test_upload_reports_a_service_that_stays_busy(client, gemini_replies):
+    calls = gemini_replies(busy())
+    response = upload(client)
+    assert response.status_code == 502
+    assert "having problems" in response.get_data(as_text=True)
+    assert len(calls) == bill_ai.MAX_ATTEMPTS
+
+
+def test_upload_reports_a_timeout(client, gemini_replies):
+    gemini_replies(TimeoutError("timed out"))
+    response = upload(client)
+    assert response.status_code == 504
+    assert "didn&#39;t respond in time" in response.get_data(as_text=True)
+
+
+def test_upload_reports_a_malformed_answer_without_retrying(client, gemini_replies):
+    calls = gemini_replies("{not json", GOOD_ANSWER)
+    response = upload(client)
+    assert response.status_code == 502
+    assert "couldn&#39;t read the AI&#39;s answer" in response.get_data(as_text=True)
+    assert len(calls) == 1
