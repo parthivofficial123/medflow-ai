@@ -70,8 +70,9 @@ Use the production URL, a listed Google test user, and the existing demo account
 6. The footer has no "Reset my demo data" link; `/account/reset` returns 404.
 7. Bills: upload `data/sample_bills/02_clinic_visit_with_lab.pdf` once (one Gemini request). The
    review page appears; **click Discard** so the demo dataset is unchanged.
-8. Sign out, then sign in again.
-9. Vercel → Logs: no errors, and no tokens, keys or bill contents in any log line.
+8. The page is dark; the footer's "Use light theme" switches it and stays on the same page; switch back.
+9. Sign out, then sign in again.
+10. Vercel → Logs: no errors, and no tokens, keys or bill contents in any log line.
 
 ## 5. Rollback
 
