@@ -22,7 +22,7 @@ def no_network_or_ai_key(monkeypatch):
     # Tests never call a real AI service, even if a developer has GEMINI_API_KEY set.
     # The same for a developer's Supabase or Vercel settings: tests choose their own.
     for name in ("GEMINI_API_KEY", "GEMINI_MODEL", "MEDFLOW_STORAGE", "MEDFLOW_SECRET_KEY", "SUPABASE_URL",
-                 "SUPABASE_PUBLISHABLE_KEY", "VERCEL"):
+                 "SUPABASE_PUBLISHABLE_KEY", "VERCEL", "MEDFLOW_DEMO_RESET"):
         monkeypatch.delenv(name, raising=False)
 
     def refuse(*args, **kwargs):

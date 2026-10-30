@@ -49,6 +49,9 @@ def create_app(test_config=None):
         SUPABASE_URL=os.environ.get("SUPABASE_URL", ""),
         SUPABASE_PUBLISHABLE_KEY=os.environ.get("SUPABASE_PUBLISHABLE_KEY", ""),
         ON_VERCEL=os.environ.get("VERCEL") == "1",
+        # Replacing an account's data in the app is a development tool: on in JSON mode, and in
+        # Supabase mode only when asked for, so a demo account can't be reset by a stray click.
+        DEMO_RESET=os.environ.get("MEDFLOW_DEMO_RESET") == "1",
     )
     if test_config:
         app.config.update(test_config)
@@ -85,7 +88,7 @@ def create_app(test_config=None):
 
     @app.context_processor
     def inject_csrf_token():
-        return {"csrf_token": csrf_token, "signed_in": signed_in()}
+        return {"csrf_token": csrf_token, "signed_in": signed_in(), "demo_reset": auth.demo_reset_allowed()}
 
     app.add_template_filter(to_date)
     app.add_template_filter(fmt_date)
@@ -151,7 +154,8 @@ def create_app(test_config=None):
         """Replace all user data with the fictional demo data in data/seed/."""
         if app.config["STORAGE"] != "json":
             raise click.ClickException("With Supabase, each user resets their own data from "
-                                       "the 'Reset my demo data' link in the app.")
+                                       "the 'Reset my demo data' link in the app "
+                                       "(shown when MEDFLOW_DEMO_RESET=1).")
         storage.reset()
         click.echo(f"Demo data restored in {app.config['DATA_DIR']}")
 

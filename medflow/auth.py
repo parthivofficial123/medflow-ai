@@ -14,7 +14,7 @@ import time
 from urllib.parse import urlencode
 
 import httpx
-from flask import (Blueprint, current_app, flash, g, redirect, render_template, request,
+from flask import (Blueprint, abort, current_app, flash, g, redirect, render_template, request,
                    session, url_for)
 from supabase import ClientOptions, create_client
 from supabase_auth.errors import AuthError
@@ -149,13 +149,21 @@ def logout():
     return redirect(url_for("auth.login") if supabase_mode() else url_for("index"))
 
 
+def demo_reset_allowed():
+    return not supabase_mode() or current_app.config["DEMO_RESET"]
+
+
 @bp.get("/account/reset")
 def confirm_reset():
+    if not demo_reset_allowed():
+        abort(404)
     return render_template("auth/confirm_reset.html")
 
 
 @bp.post("/account/reset")
 def reset():
+    if not demo_reset_allowed():
+        abort(404)
     if request.form.get("confirmed") != "yes":
         return redirect(url_for(".confirm_reset"))
     storage.reset()

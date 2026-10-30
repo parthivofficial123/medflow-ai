@@ -222,9 +222,34 @@ def test_same_ids_for_two_users_stay_separate(sb_app, fake_db):
     assert row(fake_db, bob, "appointments", 1)["status"] == "scheduled"
 
 
-def test_reset_replaces_only_the_signed_in_users_data(sb_app, fake_db):
-    alice = sign_in(sb_app, fake_db, "alice@example.test")
-    bob = sign_in(sb_app, fake_db, "bob@example.test")
+@pytest.fixture
+def reset_app(fake_db, data_dir):
+    # Reset is off in Supabase mode unless MEDFLOW_DEMO_RESET=1 turns it on.
+    return create_app({**SUPABASE_CONFIG, "DATA_DIR": str(data_dir), "DEMO_RESET": True})
+
+
+def test_reset_is_hidden_and_refused_on_supabase_by_default(sb_app, fake_db):
+    alice = sign_in(sb_app, fake_db)
+    post(alice, "/appointments/", APPOINTMENT)
+    assert "Reset my demo data" not in alice.get("/appointments/").get_data(as_text=True)
+    assert alice.get("/account/reset").status_code == 404
+    assert post(alice, "/account/reset", {"confirmed": "yes"}).status_code == 404
+    assert len(rows(fake_db, alice, "appointments")) == 7
+
+
+def test_reset_can_be_turned_on_with_an_environment_variable(fake_db, monkeypatch, data_dir):
+    for name, value in {"MEDFLOW_STORAGE": "supabase", "MEDFLOW_SECRET_KEY": "s3cret",
+                        "SUPABASE_URL": "https://demo-ref.supabase.co",
+                        "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test", "MEDFLOW_DEMO_RESET": "1"}.items():
+        monkeypatch.setenv(name, value)
+    app = create_app({"TESTING": True, "DATA_DIR": str(data_dir)})
+    client = sign_in(app, fake_db)
+    assert "Reset my demo data" in client.get("/appointments/").get_data(as_text=True)
+
+
+def test_reset_replaces_only_the_signed_in_users_data(reset_app, fake_db):
+    alice = sign_in(reset_app, fake_db, "alice@example.test")
+    bob = sign_in(reset_app, fake_db, "bob@example.test")
     post(alice, "/appointments/", APPOINTMENT)
     post(bob, "/appointments/", APPOINTMENT)
     response = post(alice, "/account/reset", {"confirmed": "yes"})
@@ -233,8 +258,8 @@ def test_reset_replaces_only_the_signed_in_users_data(sb_app, fake_db):
     assert len(rows(fake_db, bob, "appointments")) == 7
 
 
-def test_reset_needs_confirmation(sb_app, fake_db):
-    alice = sign_in(sb_app, fake_db)
+def test_reset_needs_confirmation(reset_app, fake_db):
+    alice = sign_in(reset_app, fake_db)
     post(alice, "/appointments/", APPOINTMENT)
     assert post(alice, "/account/reset").headers["Location"] == "/account/reset"
     assert len(rows(fake_db, alice, "appointments")) == 7
@@ -402,7 +427,7 @@ def test_env_example_holds_placeholders_only():
     text = (Path(__file__).parent.parent / ".env.example").read_text(encoding="utf-8")
     settings = dict(line.split("=", 1) for line in text.splitlines() if line and not line.startswith("#"))
     assert set(settings) == {"MEDFLOW_STORAGE", "MEDFLOW_SECRET_KEY", "SUPABASE_URL",
-                             "SUPABASE_PUBLISHABLE_KEY", "GEMINI_API_KEY", "GEMINI_MODEL"}
+                             "SUPABASE_PUBLISHABLE_KEY", "GEMINI_API_KEY", "GEMINI_MODEL", "MEDFLOW_DEMO_RESET"}
     for name in ("MEDFLOW_SECRET_KEY", "SUPABASE_PUBLISHABLE_KEY", "GEMINI_API_KEY"):
         assert settings[name] == "", name
     assert "<project-ref>" in settings["SUPABASE_URL"]

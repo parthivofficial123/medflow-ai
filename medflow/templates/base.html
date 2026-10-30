@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% endblock %} · MedFlow AI</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
 </head>
@@ -62,7 +63,7 @@
     <p>Demo app with fictional data only. Not medical, billing, or insurance advice.</p>
     <p class="footer__links">
       <a href="{{ url_for('welcome') }}">About MedFlow</a>
-      {% if signed_in %}<a href="{{ url_for('auth.confirm_reset') }}">Reset my demo data</a>{% endif %}
+      {% if signed_in and demo_reset %}<a href="{{ url_for('auth.confirm_reset') }}">Reset my demo data</a>{% endif %}
     </p>
   </footer>
 </body>

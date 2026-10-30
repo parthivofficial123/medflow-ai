@@ -97,3 +97,9 @@ def test_every_animation_is_opt_in_and_reduced_motion_turns_all_off():
 def test_css_loads_nothing_from_other_sites():
     css = CSS.read_text(encoding="utf-8")
     assert "url(" not in css and "@import" not in css
+
+
+def test_pages_name_a_local_favicon(client):
+    html = client.get("/welcome").get_data(as_text=True)
+    assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in html
+    assert client.get("/static/favicon.svg").status_code == 200
