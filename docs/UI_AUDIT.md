@@ -54,7 +54,7 @@ the app, so it previews the real product instead of a separate marketing style.
 
 ## 5. Recommended animation stack
 
-**CSS transitions + keyframes, plus native cross-document View Transitions. No library.**
+**CSS transitions + keyframes. No library.** (Cross-document View Transitions were tried and removed: they logged console errors.)
 
 - Motion (motion.dev) or GSAP would be a new dependency, which `CLAUDE.md` says needs approval,
   and loading either from a CDN is blocked by our CSP (and fragile on demo day). Vendoring a copy
@@ -85,7 +85,7 @@ the app, so it previews the real product instead of a separate marketing style.
 1. `DESIGN.md` + this audit (no code risk).
 2. Landing page and its tests (new route and template; auth flow unchanged).
 3. Global polish in CSS only: tokens, borders, buttons, inputs, cards, top bar, alerts.
-4. Motion in CSS: entrances, stagger, review-page reveal, busy shimmer, view transitions; all
+4. Motion in CSS: entrances, stagger, review-page reveal, busy shimmer; all
    off under reduced motion.
 5. Small template touches: icons in nav and flashes, empty states, file drop zone.
 6. Tests (landing, CSP-safe templates, reduced motion present), full suite, browser checks at
@@ -100,8 +100,8 @@ Each step is its own commit, so any one can be reverted alone.
   UI commits.
 - **`/` changes for signed-out visitors** (landing instead of a redirect to `/login`). Signed-in
   users still land on Appointments. One existing test asserted the old redirect and was updated.
-- **View Transitions** are Chromium/Safari only; other browsers just navigate. If anything looks
-  odd on the demo machine, delete the `@view-transition` rule.
+- **View Transitions** were removed after the end-to-end check: Chromium logged
+  "AbortError: Transition was skipped" on ordinary navigation.
 - **`:has()`** (dimming unticked charges) is progressive: without it, charges just don't dim.
 - **Vercel:** static files stay in `public/static/`; no new files outside it; nothing needs a
   build. Not deployed.

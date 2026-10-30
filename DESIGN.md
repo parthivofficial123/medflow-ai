@@ -117,8 +117,8 @@ Principles (after Apple's spring guidance and "Make Interfaces Feel Better"):
 6. **Honest progress.** Waiting for the AI shows an indeterminate shimmer and a plain sentence;
    no percentages, no fake steps. Extracted charges appear only on the review page, after the
    server has checked the answer.
-7. **Page changes** use the browser's cross-document View Transitions (a 160ms cross-fade, top bar
-   held still) where supported; elsewhere pages load normally.
+7. **Page changes** load normally, with no cross-fade. Chromium's cross-document View Transitions
+   were tried and removed: each skipped transition logged an uncaught `AbortError` in the console.
 
 No animation library is used. CSS transitions and keyframes cover every effect above, which
 keeps the app working under its Content-Security-Policy (`default-src 'self'`: no CDN scripts,

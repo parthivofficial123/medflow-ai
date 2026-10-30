@@ -22,10 +22,11 @@ Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and expla
 - Docs: `DESIGN.md` (tokens, states, motion, reduced motion, responsive, a11y) and `docs/UI_AUDIT.md` (audit, plan, demo risks).
 - **Landing page** (`templates/landing.html`): `/` for signed-out visitors, `/welcome` always (footer "About MedFlow"). Get Started posts to the existing `POST /login`; signed-in users still go to Appointments. `index`/`welcome` added to `auth.PUBLIC_ENDPOINTS`. `test_private_pages_redirect_to_sign_in` no longer lists `/`.
 - **CSS** (`app.css`): 3:1 input/secondary borders, sticky translucent top bar from 40rem, press/hover/focus states, nav and flash icons, drop-zone file input, unticked review charges recede (`:has`), busy spinner + indeterminate placeholder on upload (driven by the existing `aria-busy`; no percentages), empty states with actions.
-- **Motion:** CSS only, no library (CSP `default-src 'self'` and the no-new-dependency rule). Spring easing via `linear()`, 35 ms stagger capped at 8, cross-document View Transitions (160 ms), scroll-driven reveals on the landing page. Every animation sits inside `prefers-reduced-motion: no-preference`; `tests/test_ui.py` enforces it.
+- **Motion:** CSS only, no library (CSP `default-src 'self'` and the no-new-dependency rule). Spring easing via `linear()`, 35 ms stagger capped at 8, scroll-driven reveals on the landing page. Every animation sits inside `prefers-reduced-motion: no-preference`; `tests/test_ui.py` enforces it.
 - Browser-checked: landing at 375px light and 1024px dark; Expenses, Appointments, detail, upload busy state and a rendered review page (fake AI answer) at 375/768/1280. With the opt-in motion rules removed (= reduced motion) nothing is hidden; with motion on, all elements end fully visible including scroll reveals. `app.js` is unchanged.
-- Not checked: a real Gemini upload through the new UI; Firefox/Safari (View Transitions and scroll reveals are Chromium-first and degrade to plain loads); real reduced-motion OS setting (simulated by removing the rule).
-- If anything misbehaves on demo day: delete the `@view-transition` rule, or `git revert c465301 dca83e6`.
+- Not checked: a real Gemini upload through the new UI; Firefox/Safari (scroll reveals are Chromium-first and degrade to plain loads); real reduced-motion OS setting (simulated by removing the rule).
+- If anything misbehaves on demo day: `git revert c465301 dca83e6`.
+- Cross-document View Transitions were removed after the end-to-end check: Chromium logged "Uncaught (in promise) AbortError: Transition was skipped" on ordinary nav clicks.
 - `.claude/launch.json` has `medflow-json` (port 5001, `MEDFLOW_STORAGE=json`) for previewing app pages without signing in.
 
 ## Pre-publication audit (2026-10-28, `docs/GITHUB_READINESS.md`)
