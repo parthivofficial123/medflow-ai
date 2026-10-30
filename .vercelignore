@@ -8,3 +8,4 @@ docs/
 supabase/
 data/sample_bills/
 *.docx
+.claude/
