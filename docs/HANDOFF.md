@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-10-28. **Supabase and Google Sign-In verified by the user on the real project. Bill analysis now uses `gemini-3.5-flash-lite` (3/3 benchmark, 1–2 s per bill), with bounded retries and a double-submit guard. Pre-publication audit done: verdict READY WITH CONDITIONS, see `docs/GITHUB_READINESS.md`.**_
+_Last updated: 2026-10-29. **UI upgrade landed (landing page, design system, CSS-only motion); 440 tests pass. Supabase and Google Sign-In verified by the user on the real project. Bill analysis now uses `gemini-3.5-flash-lite` (3/3 benchmark, 1–2 s per bill), with bounded retries and a double-submit guard. Pre-publication audit done: verdict READY WITH CONDITIONS, see `docs/GITHUB_READINESS.md`.**_
 
 ## Goal
 Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and explains → review and fix → save to expenses, each user signed in with Google and seeing only their own data in Supabase. Then Vercel (only when approved) and, if time allows, a small price search.
@@ -17,6 +17,16 @@ Demo on Friday 2026-10-30: upload a fictional bill → Gemini extracts and expla
 - **Vercel prep (not deployed):** `app.py`, static files in `public/static/`, `.vercelignore`, uploads capped at 4 MB.
 - **SQL:** `supabase/schema.sql` (create-only; composite PK `user_id, id`; checks mirror validation; FK keeps expense links inside one user and clears them on delete; RLS with 4 policies per table; anon has no grants). `supabase/isolation_test.sql` (rolled back; pass/fail table).
 - Browser-checked: real config → sign-in page → Supabase authorize URL (Google not enabled yet, as expected); fake Supabase → signed-in header at 375px and 1280px, reset page, sign-out. Cookie is HttpOnly; no token in the HTML.
+
+## UI upgrade (2026-10-29)
+- Docs: `DESIGN.md` (tokens, states, motion, reduced motion, responsive, a11y) and `docs/UI_AUDIT.md` (audit, plan, demo risks).
+- **Landing page** (`templates/landing.html`): `/` for signed-out visitors, `/welcome` always (footer "About MedFlow"). Get Started posts to the existing `POST /login`; signed-in users still go to Appointments. `index`/`welcome` added to `auth.PUBLIC_ENDPOINTS`. `test_private_pages_redirect_to_sign_in` no longer lists `/`.
+- **CSS** (`app.css`): 3:1 input/secondary borders, sticky translucent top bar from 40rem, press/hover/focus states, nav and flash icons, drop-zone file input, unticked review charges recede (`:has`), busy spinner + indeterminate placeholder on upload (driven by the existing `aria-busy`; no percentages), empty states with actions.
+- **Motion:** CSS only, no library (CSP `default-src 'self'` and the no-new-dependency rule). Spring easing via `linear()`, 35 ms stagger capped at 8, cross-document View Transitions (160 ms), scroll-driven reveals on the landing page. Every animation sits inside `prefers-reduced-motion: no-preference`; `tests/test_ui.py` enforces it.
+- Browser-checked: landing at 375px light and 1024px dark; Expenses, Appointments, detail, upload busy state and a rendered review page (fake AI answer) at 375/768/1280. With the opt-in motion rules removed (= reduced motion) nothing is hidden; with motion on, all elements end fully visible including scroll reveals. `app.js` is unchanged.
+- Not checked: a real Gemini upload through the new UI; Firefox/Safari (View Transitions and scroll reveals are Chromium-first and degrade to plain loads); real reduced-motion OS setting (simulated by removing the rule).
+- If anything misbehaves on demo day: delete the `@view-transition` rule, or `git revert c465301 dca83e6`.
+- `.claude/launch.json` has `medflow-json` (port 5001, `MEDFLOW_STORAGE=json`) for previewing app pages without signing in.
 
 ## Pre-publication audit (2026-10-28, `docs/GITHUB_READINESS.md`)
 - Verified: no `.env` value or key pattern in any tracked file or in the history (14 commits); all patient-side data fictional; RLS policies reviewed (correct); CSRF, escaping, uploads, logs, debug mode all sound. 424 tests pass.
