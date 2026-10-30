@@ -80,10 +80,12 @@ def create_app(test_config=None):
         response.headers.update(SECURITY_HEADERS)
         return response
 
+    def signed_in():
+        return app.config["STORAGE"] == "json" or bool(session.get("access_token"))
+
     @app.context_processor
     def inject_csrf_token():
-        signed_in = app.config["STORAGE"] == "json" or bool(session.get("access_token"))
-        return {"csrf_token": csrf_token, "signed_in": signed_in}
+        return {"csrf_token": csrf_token, "signed_in": signed_in()}
 
     app.add_template_filter(to_date)
     app.add_template_filter(fmt_date)
@@ -127,9 +129,18 @@ def create_app(test_config=None):
     app.register_blueprint(expenses.bp)
     app.register_blueprint(bills.bp)
 
+    # Signed-out visitors meet the landing page; an expired token still goes on to
+    # Appointments, where the sign-in guard explains that the session ended.
     @app.get("/")
     def index():
+        if not signed_in():
+            return render_template("landing.html")
         return redirect(url_for("appointments.index"))
+
+    # The same page for signed-in users (footer link), and in JSON mode, which has no sign-in.
+    @app.get("/welcome")
+    def welcome():
+        return render_template("landing.html")
 
     @app.cli.command("reset-demo")
     @click.confirmation_option(

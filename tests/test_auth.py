@@ -37,7 +37,7 @@ def row(db, client, table, row_id):
 
 # Signing in
 
-@pytest.mark.parametrize("path", ["/", "/appointments/", "/appointments/1", "/expenses/", "/bills/",
+@pytest.mark.parametrize("path", ["/appointments/", "/appointments/1", "/expenses/", "/bills/",
                                   "/account/reset"])
 def test_private_pages_redirect_to_sign_in(sb_app, path):
     response = sb_app.test_client().get(path)

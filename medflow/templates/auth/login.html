@@ -10,5 +10,6 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn--primary" type="submit">Continue with Google</button>
   </form>
+  <p class="muted"><a href="{{ url_for('index') }}">What is MedFlow?</a></p>
 </section>
 {% endblock %}
