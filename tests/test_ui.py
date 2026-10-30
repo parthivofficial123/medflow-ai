@@ -103,3 +103,11 @@ def test_pages_name_a_local_favicon(client):
     html = client.get("/welcome").get_data(as_text=True)
     assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in html
     assert client.get("/static/favicon.svg").status_code == 200
+
+
+def test_the_page_background_is_known_before_the_stylesheet_paints(client):
+    # Without these, a browser with a dark default canvas shows it between pages.
+    html = client.get("/appointments/").get_data(as_text=True)
+    assert '<meta name="color-scheme" content="light dark">' in html
+    css = CSS.read_text(encoding="utf-8")
+    assert re.search(r"\nhtml \{[^}]*background: var\(--color-bg\)", css)

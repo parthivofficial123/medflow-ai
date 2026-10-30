@@ -102,14 +102,14 @@
 
 /* Base */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+/* On html, not only body, so the canvas between two pages is the theme's color. */
+html { -webkit-text-size-adjust: 100%; background: var(--color-bg); }
 body {
   margin: 0;
   font-family: var(--font-sans);
   font-size: var(--text-md);
   line-height: 1.5;
   color: var(--color-text);
-  background: var(--color-bg);
   min-height: 100vh;
   display: flex;
   flex-direction: column;

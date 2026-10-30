@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {#- Tells the browser the theme before app.css arrives, so it doesn't paint its own default. #}
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}{% endblock %} · MedFlow AI</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
