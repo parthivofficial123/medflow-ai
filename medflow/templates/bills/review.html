@@ -36,7 +36,7 @@
     {% if not totals.selected %}
       <p class="bill-check">No charges are ticked.</p>
     {% elif totals.total_matches %}
-      <p class="bill-check bill-check--ok">The selected charges add up to the bill's total of {{ totals.total_cents|money }}.</p>
+      <p class="bill-check bill-check--ok"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16 9.8"/></svg>The selected charges add up to the bill's total of {{ totals.total_cents|money }}.</p>
     {% elif totals.total_matches is false %}
       <p class="bill-check bill-check--problem">The selected charges ({{ totals.items_total_cents|money }}) don't add up to the bill's total ({{ totals.total_cents|money }}). A charge may be missing, unticked or misread.</p>
     {% elif totals.items_total_cents is not none %}

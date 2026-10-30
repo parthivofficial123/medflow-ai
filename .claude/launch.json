@@ -6,6 +6,13 @@
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["-m", "flask", "--app", "medflow", "run", "--debug", "--port", "5000"],
       "port": 5000
+    },
+    {
+      "name": "medflow-json",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "flask", "--app", "medflow", "run", "--debug", "--port", "5001"],
+      "env": {"MEDFLOW_STORAGE": "json"},
+      "port": 5001
     }
   ]
 }

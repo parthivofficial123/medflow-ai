@@ -74,6 +74,14 @@ def test_pages_have_no_inline_styles_or_scripts(client, path):
     assert re.findall(r"<script\b[^>]*>", html) == ['<script src="/static/js/app.js" defer>']
 
 
+def test_upload_shows_a_busy_placeholder_without_progress_numbers(client):
+    html = client.get("/bills/").get_data(as_text=True)
+    assert 'data-busy-label="Reading your bill…"' in html
+    panel = html.split('class="busy-panel"')[1].split("</div>")[0]
+    assert 'aria-hidden="true"' in panel
+    assert "%" not in panel
+
+
 # Motion
 
 def test_every_animation_is_opt_in_and_reduced_motion_turns_all_off():

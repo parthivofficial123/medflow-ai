@@ -123,8 +123,13 @@
       </ul>
     {% else %}
       <div class="card empty">
+        <span class="empty__icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg></span>
         <h3>No expenses yet</h3>
-        <p class="muted">Record a bill or an estimate with the form.</p>
+        <p class="muted">Upload a bill to turn its charges into expenses, or record an estimate with the form.</p>
+        <div class="actions">
+          <a class="btn btn--primary btn--sm" href="{{ url_for('bills.upload_form') }}">Upload a bill</a>
+          <a class="btn btn--secondary btn--sm page-header__jump" href="#add">Add expense</a>
+        </div>
       </div>
     {% endif %}
   </section>
