@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {#- Tells the browser the theme before app.css arrives, so it doesn't paint its own default. #}
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="{{ theme }}">
   <title>{% block title %}{% endblock %} · MedFlow AI</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
@@ -63,10 +63,16 @@
 
   <footer class="container footer">
     <p>Demo app with fictional data only. Not medical, billing, or insurance advice.</p>
-    <p class="footer__links">
+    <div class="footer__links">
       <a href="{{ url_for('welcome') }}">About MedFlow</a>
+      <form method="post" action="{{ url_for('set_theme') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+        {%- set other = "light" if theme == "dark" else "dark" %}
+        <button type="submit" name="theme" value="{{ other }}">Use {{ other }} theme</button>
+      </form>
       {% if signed_in and demo_reset %}<a href="{{ url_for('auth.confirm_reset') }}">Reset my demo data</a>{% endif %}
-    </p>
+    </div>
   </footer>
 </body>
 </html>

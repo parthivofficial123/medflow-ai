@@ -14,6 +14,7 @@ from . import storage
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 DEV_SECRET = "dev-only-not-a-secret"
+THEMES = ("dark", "light")
 SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'",
     "X-Frame-Options": "DENY",
@@ -88,7 +89,8 @@ def create_app(test_config=None):
 
     @app.context_processor
     def inject_csrf_token():
-        return {"csrf_token": csrf_token, "signed_in": signed_in(), "demo_reset": auth.demo_reset_allowed()}
+        return {"csrf_token": csrf_token, "signed_in": signed_in(), "demo_reset": auth.demo_reset_allowed(),
+                "theme": current_theme()}
 
     app.add_template_filter(to_date)
     app.add_template_filter(fmt_date)
@@ -145,6 +147,16 @@ def create_app(test_config=None):
     def welcome():
         return render_template("landing.html")
 
+    # A cookie read by the server, so the first paint already has the chosen theme.
+    @app.post("/theme")
+    def set_theme():
+        response = redirect(auth.safe_next(request.form.get("next")))
+        theme = request.form.get("theme")
+        if theme in THEMES:
+            response.set_cookie("theme", theme, max_age=365 * 24 * 3600, samesite="Lax",
+                                secure=app.config["ON_VERCEL"], httponly=True)
+        return response
+
     @app.cli.command("reset-demo")
     @click.confirmation_option(
         prompt="This REPLACES all MedFlow data (appointments, tasks, reminders and any changes "
@@ -183,6 +195,11 @@ def check_config(config):
                            "publishable key; keep the secret key out of the app.")
     if config["SECRET_KEY"] in ("", DEV_SECRET):
         raise RuntimeError("Set MEDFLOW_SECRET_KEY: sign-in sessions need a real secret.")
+
+
+def current_theme():
+    theme = request.cookies.get("theme")
+    return theme if theme in THEMES else THEMES[0]
 
 
 def csrf_token():

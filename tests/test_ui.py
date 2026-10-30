@@ -108,6 +108,41 @@ def test_pages_name_a_local_favicon(client):
 def test_the_page_background_is_known_before_the_stylesheet_paints(client):
     # Without these, a browser with a dark default canvas shows it between pages.
     html = client.get("/appointments/").get_data(as_text=True)
-    assert '<meta name="color-scheme" content="light dark">' in html
+    assert '<meta name="color-scheme" content="dark">' in html
     css = CSS.read_text(encoding="utf-8")
     assert re.search(r"\nhtml \{[^}]*background: var\(--color-bg\)", css)
+
+
+def test_dark_is_the_default_theme(client):
+    html = client.get("/appointments/").get_data(as_text=True)
+    assert '<html lang="en" data-theme="dark">' in html
+    assert '<meta name="color-scheme" content="dark">' in html
+    assert 'name="theme" value="light"' in html
+
+
+def test_the_theme_switch_remembers_light_and_returns_to_the_page(client):
+    client.get("/expenses/")
+    response = client.post("/theme", data={"theme": "light", "next": "/expenses/",
+                                           "csrf_token": get_csrf_token(client)})
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/expenses/"
+    html = client.get("/expenses/").get_data(as_text=True)
+    assert 'data-theme="light"' in html and 'content="light"' in html
+    assert 'name="theme" value="dark"' in html
+
+
+def test_the_theme_switch_ignores_unknown_values_and_other_sites(client):
+    client.get("/")
+    response = client.post("/theme", data={"theme": "neon", "next": "//evil.example",
+                                           "csrf_token": get_csrf_token(client)})
+    assert response.headers["Location"] == "/"
+    assert 'data-theme="dark"' in client.get("/appointments/").get_data(as_text=True)
+
+
+def test_signed_out_visitors_can_switch_the_theme(sb_app):
+    client = sb_app.test_client()
+    client.get("/")
+    response = client.post("/theme", data={"theme": "light", "next": "/",
+                                           "csrf_token": get_csrf_token(client, "/")})
+    assert response.headers["Location"] == "/"
+    assert 'data-theme="light"' in client.get("/").get_data(as_text=True)

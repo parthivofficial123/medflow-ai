@@ -11,7 +11,7 @@ typographic hierarchy, Vercel's neutral surfaces, Raycast's quick and physical f
 
 ## Color
 
-Semantic tokens only. Each has a light value and a dark value (`prefers-color-scheme: dark`).
+Semantic tokens only. Each has a dark value (the default) and a light value (`:root[data-theme="light"]`), chosen with the footer's theme switch and kept in a cookie the server reads, so the first paint is already right.
 
 | Token | Use | Light | Dark |
 |---|---|---|---|

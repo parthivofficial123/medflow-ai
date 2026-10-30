@@ -24,7 +24,7 @@ from . import storage
 bp = Blueprint("auth", __name__)
 log = logging.getLogger(__name__)
 
-PUBLIC_ENDPOINTS = {"index", "welcome", "auth.login", "auth.start", "auth.callback", "auth.logout", "static"}
+PUBLIC_ENDPOINTS = {"index", "welcome", "set_theme", "auth.login", "auth.start", "auth.callback", "auth.logout", "static"}
 # Treat a token this close to expiry as expired, so it can't run out mid-request.
 EXPIRY_MARGIN_SECONDS = 60
 
