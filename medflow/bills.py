@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
@@ -10,6 +11,7 @@ bp = Blueprint("bills", __name__, url_prefix="/bills")
 # Vercel rejects request bodies over 4.5 MB.
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 MAX_ITEMS = 100
+US_DATE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
 # Review ids of recent saves, kept in the session so Back + Save can't save a bill twice.
 SAVED_REVIEWS_KEPT = 20
 # The file's first bytes decide its type; the name only has to agree with them.
@@ -59,7 +61,7 @@ def check_item(raw):
     elif cents is None:
         problems.append("Couldn't read this amount. Check it on your bill.")
 
-    service_date, error = dates.check_date(item["service_date"])
+    service_date, error = read_date(item["service_date"])
     if error:
         problems.append("Couldn't read the date of service.")
         service_date = None
@@ -73,6 +75,21 @@ def check_item(raw):
         "service_date_raw": item["service_date"],
         "problems": problems,
     }
+
+
+def read_date(raw):
+    """(YYYY-MM-DD, None) or (raw, error). The model is asked for ISO dates but sometimes
+    copies the bill's "10/15/2026". That is read only when no other reading exists:
+    "10/02/2026" could be 2 October or 10 February, so it stays for the user to enter."""
+    match = US_DATE.fullmatch(raw)
+    if match:
+        first, second, year = match.groups()
+        month_first = dates.check_date(f"{year}-{first:0>2}-{second:0>2}")
+        day_first = dates.check_date(f"{year}-{second:0>2}-{first:0>2}")
+        if month_first[1] is None and (day_first[1] is not None or day_first[0] == month_first[0]):
+            return month_first
+        return raw, "Ambiguous or invalid date."
+    return dates.check_date(raw)
 
 
 def check_answer(answer):
@@ -93,7 +110,7 @@ def check_answer(answer):
     items_total = None
     if items and all(i["amount_cents"] is not None for i in items):
         items_total = sum(i["amount_cents"] for i in items)
-    bill_date, error = dates.check_date(text(answer.get("bill_date"), "bill_date"))
+    bill_date, error = read_date(text(answer.get("bill_date"), "bill_date"))
     return {
         "provider": text(answer.get("provider"), "provider"),
         "bill_date": None if error else bill_date,

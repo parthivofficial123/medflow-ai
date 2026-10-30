@@ -194,7 +194,23 @@ def test_negative_amount_is_flagged(amount):
     assert "negative" in flagged["problems"][0]
 
 
-@pytest.mark.parametrize("service_date", ["10/02/2026", "", "2026-13-01", "unknown"])
+@pytest.mark.parametrize("raw, expected", [
+    ("10/15/2026", "2026-10-15"),  # seen from Gemini on the Harborview sample bill
+    ("1/31/2026", "2026-01-31"),
+    ("05/05/2026", "2026-05-05"),  # both readings are the same day
+])
+def test_unambiguous_us_date_is_read_and_its_original_kept(raw, expected):
+    read = bills.check_answer({"items": [item(service_date=raw)], "bill_date": raw})
+    assert read["items"][0]["service_date"] == expected
+    assert read["items"][0]["service_date_raw"] == raw
+    assert read["items"][0]["problems"] == []
+    assert read["bill_date"] == expected
+
+
+# 10/02 could be October 2 or 2 February: MedFlow doesn't pick one.
+@pytest.mark.parametrize("service_date", ["10/02/2026", "02/10/2026", "", "2026-13-01", "unknown",
+                                          "02/30/2026", "13/13/2026", "10/15/26", "10/15/1999",
+                                          "10-15-2026", " 10/15/2026x"])
 def test_unreadable_date_is_flagged(service_date):
     flagged = bills.check_answer({"items": [item(service_date=service_date)]})["items"][0]
     assert flagged["service_date"] is None
@@ -457,6 +473,15 @@ def test_unreadable_date_from_the_bill_is_shown_as_a_hint(client, fake_ai):
     fake_ai({"items": [item(service_date="10/02/2026")]})
     html = upload(client).get_data(as_text=True)
     assert "On the bill: 10/02/2026" in html
+
+
+def test_us_date_from_the_bill_fills_the_date_and_the_charge_is_selected(client, fake_ai):
+    fake_ai({"items": [item(service_date="10/15/2026")]})
+    html = upload(client).get_data(as_text=True)
+    assert 'name="date-0" type="date" value="2026-10-15"' in html
+    assert 'name="include-0" value="yes" checked' in html
+    assert "Couldn't read the date" not in html
+    assert "On the bill: 10/15/2026" in html
 
 
 def test_ai_warnings_survive_a_failed_save(client, fake_ai):
